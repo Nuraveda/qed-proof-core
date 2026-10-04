@@ -11,6 +11,12 @@ The client libraries have their own changelogs: [Python SDK](https://github.com/
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-04
+
+### Changed
+
+- README: opens with a 20-second product video (a silent loop, linking to the full video with sound).
+
 ## [0.6.0] - 2026-10-04
 
 The log becomes publicly readable and checkable: a signed tree head, consistency proofs, and a first reputation score.
@@ -114,6 +120,7 @@ Initial release.
 - A verification node with GitHub and HTTP verifiers, a verdict engine and a receipt builder.
 
 [Unreleased]: https://github.com/Nuraveda/qed-proof-core/compare/v0.6.0...HEAD
+[0.6.1]: https://github.com/Nuraveda/qed-proof-core/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Nuraveda/qed-proof-core/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Nuraveda/qed-proof-core/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Nuraveda/qed-proof-core/compare/v0.3.0...v0.4.0

@@ -4,6 +4,10 @@
 
 ### Receipts for AI agents: what an agent **claimed** it did, checked against what the **destination** actually shows.
 
+<a href="https://qedproof.site/media/qed-proof-in-20s.mp4"><img src="https://qedproof.site/media/qed-proof-in-20s.gif" alt="QED Proof in 20 seconds: an agent reports it pushed a1b2c3 to main, QED Proof reads GitHub's own commit list, finds no such commit, and issues a signed Failed receipt." width="800"></a>
+
+<sub>20 seconds, silent loop · <a href="https://qedproof.site/media/qed-proof-in-20s.mp4">watch with sound</a></sub>
+
 An open protocol and a **self-hostable node**. An agent says *"I pushed commit `abc123` to `main`"*; the node asks
 GitHub itself, decides a verdict, **signs a receipt**, appends it to an **append-only Merkle log**, and anchors the
 log's root on a **public chain**. Anyone can check a receipt later — offline, without trusting whoever issued it.
