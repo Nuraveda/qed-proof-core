@@ -32,7 +32,8 @@ def claim_object(c: Claim) -> dict:
 
 
 def build_body(*, claim: Claim, decision: Decision, verifier_id: str, verifier_version: str, attempts: int,
-               issuer_key_id: str, issuer_name: str, issued_at: datetime, receipt_id: str | None = None) -> dict:
+               issuer_key_id: str, issuer_name: str, issued_at: datetime, receipt_id: str | None = None, trust_level: int = 1,
+               code_hash: str | None = None, attestation_sha256: str | None = None) -> dict:
     verdict = {"value": decision.verdict.value}
     if decision.reason is not None:
         verdict["reason_code"] = decision.reason.value
@@ -52,8 +53,12 @@ def build_body(*, claim: Claim, decision: Decision, verifier_id: str, verifier_v
             "facts": decision.facts,
         },
         "verdict": verdict,
-        "trust_level": 1,
+        "trust_level": trust_level,
     }
+    if code_hash is not None:
+        body["observation"]["verifier"]["code_hash"] = code_hash
+    if attestation_sha256 is not None:  # SPEC §4.1/§7.1: the body commits to the document by hash; the document travels outside it
+        body["attestation"] = {"type": "aws-nitro-enclave", "document_sha256": attestation_sha256}
     if poaw_core.has_float(body):
         raise ValueError("receipt body contains a float; SPEC §3 allows integers only")
     return body

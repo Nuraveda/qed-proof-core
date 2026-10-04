@@ -1,0 +1,8 @@
+# Third-party runtime deps of the enclave image. poaw-core / poaw-node / poaw-enclave are installed from the
+# build context with --no-deps (node's fastapi/asyncpg/uvicorn are never imported here, so they stay out of the image).
+cryptography>=43
+rfc8785==0.1.4
+pydantic>=2.8
+httpx>=0.27
+certifi
+cbor2==5.9.0

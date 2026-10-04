@@ -270,7 +270,9 @@ def create_app(get_node: Callable[[], Awaitable[Node]], *, log_id: str, tick_ena
         except (ValueError, ValidationError) as exc:
             raise HTTPException(status_code=422, detail=f"invalid params for {c.action}: {_brief(exc)}") from None
         receipt_id = None
-        if created:  # first check inline, so fast destinations decide without waiting for the tick
+        # First check inline, so fast destinations decide without waiting for the tick. Enclave-eligible claims skip it:
+        # the enclave decides them, or the tick does once the window has passed.
+        if created and not n.enclave_eligible(claim):
             attempts = await n.store.bump_attempt(claim.id)
             receipt_id = await n.check(claim, attempts=attempts)
         status = await n.store.claim_status(ws, claim.id)

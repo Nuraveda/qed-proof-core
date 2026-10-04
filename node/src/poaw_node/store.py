@@ -34,11 +34,12 @@ def _claim(r: asyncpg.Record) -> Claim:
     return Claim(id=str(r["id"]), workspace_id=str(r["workspace_id"]), agent_ref=r["agent_ref"],
                  client_claim_id=r["client_claim_id"], action=r["action"], target=r["target"],
                  params=json.loads(r["params"]) if isinstance(r["params"], str) else dict(r["params"]),
-                 claimed_at=r["claimed_at"], deadline_at=r["deadline_at"], attempts=r["attempts"])
+                 claimed_at=r["claimed_at"], deadline_at=r["deadline_at"], attempts=r["attempts"],
+                 created_at=r["created_at"])
 
 
 _CLAIM_COLS = """c.id, c.workspace_id, a.external_ref as agent_ref, c.client_claim_id, c.action, c.target, c.params,
-                 c.claimed_at, c.deadline_at, c.attempts"""
+                 c.claimed_at, c.deadline_at, c.attempts, c.created_at"""
 
 
 class Store:
@@ -85,16 +86,52 @@ class Store:
                 "where c.workspace_id = $1 and c.client_claim_id = $2", workspace_id, c.client_claim_id)
             return _claim(row), new_id is not None
 
-    async def lease_due(self, limit: int, lease: timedelta) -> list[Claim]:
-        """Claim up to `limit` due claims for this worker (the SKIP LOCKED lease pattern)."""
+    async def lease_due(self, limit: int, lease: timedelta, *,
+                        skip_enclave: tuple[list[str], timedelta] | None = None) -> list[Claim]:
+        """Claim up to `limit` due claims for this worker (the SKIP LOCKED lease pattern).
+
+        `skip_enclave=(actions, window)` leaves enclave-eligible claims alone (action in `actions` and still inside
+        `window` of creation): the filter is in the query, so they are never leased and their attempt count is untouched."""
+        extra, args = "", [limit, lease]
+        if skip_enclave is not None:
+            extra = "and not (action = any($3::text[]) and now() < created_at + $4::interval)"
+            args += [sorted(skip_enclave[0]), skip_enclave[1]]
         rows = await self.pool.fetch(
             f"""with due as (
-                   select id from qed.claims where state = 'queued' and next_attempt_at <= now()
+                   select id from qed.claims where state = 'queued' and next_attempt_at <= now() {extra}
                    order by next_attempt_at limit $1 for update skip locked)
                 update qed.claims c set next_attempt_at = now() + $2::interval, attempts = c.attempts + 1
                 from due, qed.agents a where c.id = due.id and a.id = c.agent_id
-                returning {_CLAIM_COLS}""", limit, lease)
+                returning {_CLAIM_COLS}""", *args)
         return [_claim(r) for r in rows]
+
+    async def lease_enclave(self, actions: list[str], window: timedelta, limit: int, lease: timedelta) -> list[Claim]:
+        """Lease up to `limit` due, enclave-eligible claims (action in `actions`, inside `window`) for the enclave host."""
+        rows = await self.pool.fetch(
+            f"""with due as (
+                   select id from qed.claims where state = 'queued' and next_attempt_at <= now()
+                     and action = any($3::text[]) and now() < created_at + $4::interval
+                   order by next_attempt_at limit $1 for update skip locked)
+                update qed.claims c set next_attempt_at = now() + $2::interval, attempts = c.attempts + 1
+                from due, qed.agents a where c.id = due.id and a.id = c.agent_id
+                returning {_CLAIM_COLS}""", limit, lease, sorted(actions), window)
+        return [_claim(r) for r in rows]
+
+    async def count_enclave_pending(self, actions: list[str], window: timedelta) -> int:
+        """Queued claims still inside their enclave window (used to decide whether the enclave host should be running)."""
+        return int(await self.pool.fetchval(
+            """select count(*) from qed.claims where state = 'queued' and action = any($1::text[])
+               and now() < created_at + $2::interval""", sorted(actions), window))
+
+    async def queued_claim(self, claim_id: str) -> Claim | None:
+        """A claim that is still undecided, or None (unknown, malformed id, or already decided)."""
+        try:
+            row = await self.pool.fetchrow(
+                f"select {_CLAIM_COLS} from qed.claims c join qed.agents a on a.id = c.agent_id "
+                "where c.id = $1::uuid and c.state = 'queued'", claim_id)
+        except asyncpg.DataError:
+            return None
+        return _claim(row) if row else None
 
     async def bump_attempt(self, claim_id: str) -> int:
         return await self.pool.fetchval(
@@ -105,8 +142,10 @@ class Store:
             "update qed.claims set next_attempt_at = $2, last_error = $3 where id = $1 and state = 'queued'",
             claim_id, next_at, error[:500])
 
-    async def record(self, claim: Claim, receipt: dict, *, alert: bool, sink: str) -> int:
-        """Append the signed receipt to the log and mark the claim decided, atomically. Returns leaf_index."""
+    async def record(self, claim: Claim, receipt: dict, *, alert: bool, sink: str,
+                     attestation_document: str | None = None) -> int:
+        """Append the signed receipt to the log and mark the claim decided, atomically. Returns leaf_index.
+        `attestation_document` (level 3) is stored beside the receipt, outside the signed body (SPEC §4)."""
         leaf = poaw_core.leaf_hash(receipt)
         async with self.pool.acquire() as conn, conn.transaction():
             await conn.execute("select pg_advisory_xact_lock($1)", LOG_LOCK)
@@ -120,10 +159,10 @@ class Store:
             await conn.executemany("insert into qed.log_nodes (level, idx, hash) values ($1, $2, $3)",
                                    [(0, idx, leaf)] + list(new_nodes))
             await conn.execute(
-                """insert into qed.receipts (id, claim_id, workspace_id, body, signature, leaf_index, verdict)
-                   values ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7)""",
+                """insert into qed.receipts (id, claim_id, workspace_id, body, signature, leaf_index, verdict, attestation_document)
+                   values ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8)""",
                 receipt["body"]["receipt_id"], claim.id, claim.workspace_id, json.dumps(receipt["body"]),
-                json.dumps(receipt["signature"]), idx, receipt["body"]["verdict"]["value"])
+                json.dumps(receipt["signature"]), idx, receipt["body"]["verdict"]["value"], attestation_document)
             await conn.execute("update qed.claims set state = 'decided' where id = $1", claim.id)
             size = idx + 1
             root = await with_nodes(conn, lambda get: poaw_core.mth_range(0, size, get))
@@ -179,7 +218,7 @@ class Store:
         return [dict(r) for r in await self.pool.fetch(LIST_CONNECTIONS_SQL, workspace_id)]
 
     async def receipt_with_proof(self, receipt_id: str, log_id: str) -> dict | None:
-        r = await self.pool.fetchrow("select body, signature, leaf_index from qed.receipts where id = $1", receipt_id)
+        r = await self.pool.fetchrow("select body, signature, leaf_index, attestation_document from qed.receipts where id = $1", receipt_id)
         if not r:
             return None
         body = json.loads(r["body"]) if isinstance(r["body"], str) else r["body"]
@@ -201,7 +240,10 @@ class Store:
                                "tx_hash": anchor["tx_hash"], "tree_size": anchor["tree_size"],
                                "block_number": anchor["block_number"],
                                "block_time": ts(anchor["block_time"]) if anchor["block_time"] else None}
-        return {"body": body, "signature": sig, "proof": proof}
+        out = {"body": body, "signature": sig, "proof": proof}
+        if r["attestation_document"]:
+            out["attestation_document"] = r["attestation_document"]
+        return out
 
     # -- public log reads (lane public-log). Hashes only: no receipt ids, no bodies. ---------------------------------
     async def log_size(self) -> int:

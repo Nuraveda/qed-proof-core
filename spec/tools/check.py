@@ -17,6 +17,7 @@ import jsonschema
 sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parents[2] / "core-python" / "src"))
 import poaw_core as ref  # noqa: E402
+from poaw_core import nitro  # noqa: E402
 
 _SCHEMAS = Path(__file__).parents[1] / "schema"
 _VALIDATOR = jsonschema.Draft202012Validator(json.loads((_SCHEMAS / "receipt.schema.json").read_text()))
@@ -116,9 +117,21 @@ def check_head(head_doc: dict, proof: dict | None, keyset: dict, get_consistency
     return {"ok": ok, "reason": "head_consistent" if ok else "not_consistent", "checks": r["checks"]}
 
 
+def load_root_der(path: str) -> bytes:
+    """A trust-anchor override for tests (--nitro-root): a PEM or DER X.509 certificate file."""
+    raw = Path(path).read_bytes()
+    if raw.lstrip().startswith(b"-----BEGIN"):
+        from cryptography import x509
+        from cryptography.hazmat.primitives.serialization import Encoding
+        return x509.load_pem_x509_certificate(raw).public_bytes(Encoding.DER)
+    return raw
+
+
 def check(receipt: dict, keyset: dict, rpc_url: str | None = None, pipeline: dict | None = None, *,
-          head: dict | None = None, consistency: list[dict] | None = None, issuer: str | None = None, fetch=None) -> dict:
-    """Return a report for a receipt or a change entry. `valid` is true only if every check that applies passes."""
+          head: dict | None = None, consistency: list[dict] | None = None, issuer: str | None = None, fetch=None,
+          nitro_root: bytes | None = None) -> dict:
+    """Return a report for a receipt or a change entry. `valid` is true only if every check that applies passes.
+    `nitro_root` (DER) replaces the pinned AWS Nitro root for the §7.1 attestation check; it exists for tests only."""
     report: dict = {"checks": {}}
     c = report["checks"]
 
@@ -173,6 +186,18 @@ def check(receipt: dict, keyset: dict, rpc_url: str | None = None, pipeline: dic
         h = check_head(head, proof, keyset, get_consistency)
         c["head"] = True if h["ok"] else h["reason"]
 
+    # §7.1 / §10 step 5: at trust_level >= 3 the attestation is checked in full. A failure never invalidates the receipt
+    # (it is still a signed L1/L2 receipt); it only caps the achieved level, and `attestation` carries the reason.
+    tl = body.get("trust_level")
+    if not is_change and c["schema"] and isinstance(tl, int) and not isinstance(tl, bool) and tl >= 3:
+        try:
+            nitro.verify_enclave_receipt(receipt, keyset.get("verifier_builds"), root_der=nitro_root)
+            c["attestation"] = True
+        except nitro.AttestationError as e:
+            c["attestation"] = e.reason
+        except Exception:  # anything unforeseen is unproven, never a pass
+            c["attestation"] = "attestation_invalid"
+
     # §15.2: only present when the body carries a policy. Without the pipeline document it is "not_checked".
     policy = body.get("policy")
     if policy is not None:
@@ -185,6 +210,9 @@ def check(receipt: dict, keyset: dict, rpc_url: str | None = None, pipeline: dic
                        and c.get("policy", True) in (True, "not_checked") and c.get("head", True) is True)
     # §7: report the ACHIEVED level. L2 needs inclusion AND an anchor verified on-chain (--rpc); offline the ceiling is 1.
     report["achieved_trust_level"] = (2 if c["inclusion"] is True and c["anchor"] is True else 1) if report["valid"] else 0
+    # §7.1: levels are cumulative, so level 3 needs level 2 (inclusion + a verified anchor) and every attestation rule.
+    if report["valid"] and c.get("attestation") is True and report["achieved_trust_level"] == 2:
+        report["achieved_trust_level"] = 3
     report["verdict"] = body.get("verdict", {}).get("value") if report["valid"] and not is_change else None
     return report
 
@@ -193,6 +221,7 @@ if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument("receipt"); ap.add_argument("keys"); ap.add_argument("--rpc"); ap.add_argument("--pipeline")
+    ap.add_argument("--nitro-root", metavar="FILE", help="TESTS ONLY: trust this certificate instead of the AWS Nitro root")
     ap.add_argument("--consistency", action="append", default=[], metavar="FILE", help="a /v1/log/consistency response (repeatable)")
     ap.add_argument("--head", metavar="FILE|URL", help="a signed tree head (§8.5): a file or the issuer's /v1/log/head URL")
     ap.add_argument("--issuer", metavar="URL", help="issuer base URL, to fetch consistency proofs when none is supplied")
@@ -210,4 +239,5 @@ if __name__ == "__main__":
         else:
             head = json.loads(Path(args.head).read_text())
     consistency = [json.loads(Path(f).read_text()) for f in args.consistency]
-    print(json.dumps(check(receipt, keyset, args.rpc, pipeline, head=head, consistency=consistency, issuer=issuer), indent=2))
+    print(json.dumps(check(receipt, keyset, args.rpc, pipeline, head=head, consistency=consistency, issuer=issuer,
+                       nitro_root=load_root_der(args.nitro_root) if args.nitro_root else None), indent=2))

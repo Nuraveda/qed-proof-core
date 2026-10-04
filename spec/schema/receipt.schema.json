@@ -9,7 +9,8 @@
   "properties": {
     "body": { "$ref": "#/$defs/body" },
     "signature": { "$ref": "#/$defs/signature" },
-    "proof": { "$ref": "#/$defs/proof" }
+    "proof": { "$ref": "#/$defs/proof" },
+    "attestation_document": { "$ref": "#/$defs/b64url" }
   },
   "$defs": {
     "timestamp": {
@@ -92,7 +93,7 @@
               "properties": {
                 "id": { "$ref": "#/$defs/action" },
                 "version": { "type": "string", "pattern": "^\\d+$" },
-                "code_hash": { "$ref": "#/$defs/fingerprint" }
+                "code_hash": { "oneOf": [{ "$ref": "#/$defs/fingerprint" }, { "type": "string", "pattern": "^sha384:[0-9a-f]{96}$" }] }
               }
             },
             "observed_at": { "$ref": "#/$defs/timestamp" },
@@ -114,10 +115,10 @@
         "trust_level": { "type": "integer", "minimum": 1, "maximum": 4 },
         "attestation": {
           "type": "object",
-          "required": ["type", "document"],
+          "required": ["type", "document_sha256"],
           "properties": {
             "type": { "type": "string" },
-            "document": { "$ref": "#/$defs/b64url" }
+            "document_sha256": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }
           }
         },
         "supersedes": { "type": "string" },

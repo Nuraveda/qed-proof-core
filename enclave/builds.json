@@ -1,0 +1,13 @@
+{
+  "builds": [
+    {
+      "code_hash": "sha384:e3d1e91c74c9d06f7f448168c9fb78cf4f9f031e40a41157101d7b19bf1f0a27a30bdeb5ccf9361350b93b8b26ad6591",
+      "platform": "aws-nitro-enclave",
+      "version": "2",
+      "source": "https://github.com/Nuraveda/qed-proof-core/tree/v0.7.0/enclave",
+      "image_digest": "sha256:db091e5539e841569f8b2f85785d6b6d15d5a274455cb6e91c7cae9d4c7bf250",
+      "eif_sha256": "0966fd130a57fd22b1bb3646ff6d15cb6e5fc1d96ca18056839646db2a596f81",
+      "published_at": "2026-10-04T20:33:23Z"
+    }
+  ]
+}

@@ -49,19 +49,21 @@ particular destination. Each verifier publishes its own profile (§9).
 
 ## 4. The receipt object
 
-A receipt has three top-level members:
+A receipt has three top-level members, plus one optional fourth at trust level 3:
 
 ```json
 {
   "body":      { … },   // the signed statement (§4.1)
   "signature": { … },   // over the body (§5)
-  "proof":     { … }    // log inclusion and anchor (§8). NOT signed, and may be added later
+  "proof":     { … },   // log inclusion and anchor (§8). NOT signed, and may be added later
+  "attestation_document": "…"  // level 3 only: base64url(COSE_Sign1), the document body.attestation commits to (§7.1). NOT signed
 }
 ```
 
 `body` and `signature` are immutable once issued. `proof` is attached by the log and may be
 extended over time (for example, when an anchor lands). It is verified on its own terms (§8), so it
-doesn't need to be signed.
+doesn't need to be signed. `attestation_document` is likewise outside the signed body (so the signed message stays small),
+but it cannot be swapped: the body commits to it by hash (§4.1, §7.1), so it is bound to the signature.
 
 ### 4.1 `body`
 
@@ -77,7 +79,7 @@ doesn't need to be signed.
 | `observation` | object | MUST | §4.3 |
 | `verdict` | object | MUST | `{ "value": Verdict, "reason_code"?: ReasonCode }` (§6) |
 | `trust_level` | integer | MUST | 1–4 (§7) |
-| `attestation` | object | MAY | Required when `trust_level` ≥ 3. `{ "type": string, "document": string }`, e.g. `type: "aws-nitro-enclave"`. |
+| `attestation` | object | MAY | Required when `trust_level` ≥ 3. `{ "type": string, "document_sha256": string }`, e.g. `type: "aws-nitro-enclave"`. `document_sha256` is `base64url(SHA-256(document bytes))`; the document itself is the receipt's top-level `attestation_document` (§4), not part of the body. |
 | `supersedes` | string | MAY | The `receipt_id` this receipt corrects. The old receipt remains valid as a record. Consumers SHOULD prefer the newest in a chain. |
 | `policy` | object | MAY | `poaw/0.2`. The pipeline version that asked for this receipt: `{ "pipeline_id": string, "pipeline_version": integer, "digest": string }` (§15.2). |
 
@@ -99,7 +101,7 @@ MUST reject a body whose `spec_version` major version they don't support. Checke
 
 | Field | Type | Req. | Meaning |
 |---|---|---|---|
-| `verifier` | object | MUST | `{ "id": string, "version": string, "code_hash"?: string }`. `id` + `version` name the profile (§9). `code_hash` is REQUIRED at trust level ≥ 3 and identifies the exact build that ran. |
+| `verifier` | object | MUST | `{ "id": string, "version": string, "code_hash"?: string }`. `id` + `version` name the profile (§9). `code_hash` is REQUIRED at trust level ≥ 3 and identifies the exact build that ran (`sha384:` + PCR0 hex, §7.1). |
 | `observed_at` | timestamp | MUST | When the decisive read of the destination happened. |
 | `deadline_at` | timestamp | MUST | The latest time the verifier would wait for the outcome (§6.2). |
 | `attempts` | integer | MUST | Number of reads of the destination. |
@@ -145,6 +147,9 @@ from being valid as a signature over any other protocol's message.
                 "valid_from": "…Z", "revoked_at": null } ],
     "anchor_addresses": ["0x…"], "anchor_schemas": ["0x<EAS schema UID>"] }
   ```
+  `verifier_builds` (optional; needed for level 3, §7.1) lists the enclave builds the issuer accepts:
+  `[ { "code_hash": "sha384:<PCR0 hex>", "platform": "aws-nitro-enclave", "version": "…", "source": "<URL>",
+  "published_at": "…Z" } ]`. A `code_hash` not listed there is `unknown_build`.
   `anchor_addresses` and `anchor_schemas` are what an anchor check (§8.4) accepts. An attestation from any other
   address, or under any other schema, does not anchor this issuer's log.
 - A receipt is **signature-valid** if the key exists, the signature checks out, and
@@ -203,6 +208,56 @@ from being valid as a signature over any other protocol's message.
 
 `trust_level` is the issuer's claim about which of these it provides. Checkers MUST compute the
 **achieved** level from what actually verifies, and MUST report the lower of the two.
+
+### 7.1 Attested observations (level 3, `aws-nitro-enclave`)
+
+At level 3 the issuer runs the verifier inside an AWS Nitro enclave and the enclave, not the issuer, vouches for what was
+observed. The receipt carries:
+
+- `trust_level: 3`;
+- `observation.verifier.code_hash = "sha384:" + lowercase hex(PCR0)`, the measurement of the enclave image;
+- `attestation = { "type": "aws-nitro-enclave", "document_sha256": base64url(SHA-256(document bytes)) }` in the body, where the
+  document is the COSE_Sign1 the enclave's Nitro Security Module issued. The document itself (about 6 KB once encoded) travels
+  beside the body as the receipt's top-level `attestation_document` (base64url), the way `proof` does, so that the signed
+  message stays small: pure Ed25519 over a KMS-held key accepts at most 4096 bytes. Everything else (issuer signature, log,
+  anchor) is as at levels 1 and 2.
+
+**The statement.** The enclave attests to this object, built from the receipt body and nothing else:
+
+```json
+{ "claim_digest": body.claim.claim_digest,
+  "verifier": { "id": body.observation.verifier.id, "version": body.observation.verifier.version },
+  "observed_at": body.observation.observed_at,
+  "facts": body.observation.facts,
+  "verdict": body.verdict }
+```
+
+`verdict` and `facts` are copied exactly as they appear in the body. `user_data = SHA-256(JCS(statement))` (32 bytes) is placed
+in the attestation document; `nonce` is unused. A different verdict, facts, time, verifier or claim gives a different digest.
+
+**Checking** (`trust_level ≥ 3` and `attestation.type == "aws-nitro-enclave"`):
+
+1. Take the document from the receipt's top-level `attestation_document`. It MUST be present, and
+   `base64url(SHA-256(decoded bytes))` MUST equal `body.attestation.document_sha256`. Decode it as a COSE_Sign1 (CBOR tag 18, or the bare four-element array). The protected header is `{1: -35}`
+   (ES384). The payload is a CBOR map with `module_id`, `digest` (`"SHA384"`), `timestamp` (milliseconds), `pcrs` (integer to
+   bytes), `certificate` (DER), `cabundle` (DER list), `user_data`, and optionally `public_key` and `nonce`.
+2. `cabundle[0]` MUST be the AWS Nitro Enclaves root: the certificate whose DER has SHA-256
+   `641a0321a3e244efe456463195d606317ed7cdcc3c1756e09893f3c68f79bb5b` (shipped as `nitro-root.pem`). The chain
+   `cabundle[0] … cabundle[n]`, then `certificate`, MUST verify: each certificate signed by the one before it, every
+   issuing certificate a CA (basic constraints, path length respected), every certificate valid at `timestamp`.
+3. The COSE signature MUST verify with `certificate`'s P-384 public key (ECDSA, SHA-384, raw `r‖s`) over the
+   Sig_structure `["Signature1", protected, h'', payload]`.
+4. `pcrs[0]` MUST equal the bytes of `code_hash` after `sha384:`, and `user_data` MUST equal the statement digest
+   recomputed from the receipt body.
+5. `code_hash` MUST appear in the issuer's `verifier_builds` (§5.2), the builds it publishes as accepted.
+6. If any rule fails, the achieved level is at most 2 and the checker reports why, with one of `attestation_invalid`
+   (steps 1 and 3, an absent `attestation_document`, or a hash that does not match), `attestation_chain` (step 2), `pcr_mismatch` and `statement_mismatch` (step 4) or `unknown_build` (step 5).
+   A failed attestation does not make the receipt's signature invalid.
+
+A checker takes no trust-anchor input other than the pinned root; a way to replace it is for tests only. Levels are
+cumulative (§7): the achieved level is 3 only when level 2 is achieved (inclusion and a verified anchor) **and** every
+rule above holds. A checker that cannot check the anchor (no RPC) still reports `attestation` true, with the achieved
+level it could reach without the anchor.
 
 ## 8. Log and anchoring
 
@@ -319,8 +374,10 @@ The profiles for the reference verifiers are published in [`profiles/`](profiles
 2. Resolve `issuer.key_id` from the issuer's key set, check the validity window, and verify the §5 signature.
 3. Recompute `claim.claim_digest`.
 4. If `proof` is present, verify inclusion (§8.3), and the anchor if present (§8.4).
-5. If `trust_level ≥ 3`, verify `attestation` against the platform's root of trust, and check that `code_hash`
-   matches a published verifier build.
+5. If `trust_level ≥ 3`, verify `attestation` per §7.1: the receipt's `attestation_document` against
+   `body.attestation.document_sha256`, the COSE document and its certificate chain to the pinned
+   platform root, `pcrs[0]` = `code_hash`, `user_data` = the recomputed statement digest, and `code_hash` in the issuer's
+   `verifier_builds`. On failure the achieved level is at most 2, with the §7.1 reason.
 6. Report: signature ✓/✗, inclusion ✓/✗/absent, anchor ✓/✗/absent (with proven-by time), **achieved** trust
    level, and the verdict. A checker MUST NOT present a receipt as valid if step 2 fails.
 7. If `body.policy` is present, report `policy`: `not_checked` without the pipeline document, otherwise ✓/✗ per §15.2.
@@ -348,6 +405,10 @@ the ERC-8004 draft stabilises.
 wrong key, revoked key, bad inclusion path, anchor/root mismatch, every verdict value and every reason code, and (from
 `poaw/0.2`) policy digests, change entries, and a signature moved across domains. The manifest also lists signed tree heads
 (§8.5, `tree_head_vectors`) and consistency proofs (§8.4, `consistency_vectors`) under their own keys.
+`attestation_vectors` (§7.1) are level-3 receipts built on a deterministic test certificate chain (never AWS): a valid one,
+a wrong root, a tampered payload, a PCR mismatch, a statement mismatch, an unknown build and a document that does not match the hash the body commits to. Each names the `keyset`
+(`keys-l3.json`, carrying `verifier_builds`) and the test root `nitro_root` (`nitro-test-root.pem`) a checker is given in
+place of the AWS root, which tests may do and real checks may not.
 Every conforming implementation MUST produce the expected outcome for every vector.
 
 ## 14. Change entries (`poaw/0.2`)
@@ -441,6 +502,13 @@ digest lets its owner show which rule applied without disclosing it to everyone 
 `poaw/0.2` is a minor version. Every `poaw/0.1` receipt is still valid, byte for byte, and checkers MUST keep accepting it.
 Added: the optional `policy` member (§4.1, §15.2); the change entry (§14) with its own signature domain (§5.1); the pipeline
 document (§15). A receipt that uses none of these MAY keep saying `poaw/0.1`.
+
+Added later, without a version change (existing receipts are unaffected): the level-3 attestation rules (§7.1), the optional
+`verifier_builds` key-set member (§5.2), and `code_hash` as `sha384:` plus 96 hex digits (a PCR0) as well as `sha256:`.
+
+Changed before release, without a version change: `body.attestation` is `{ type, document_sha256 }` and the document moved to the
+receipt's top-level `attestation_document` (§4, §7.1), because the full document (about 6 KB) exceeded the 4096-byte message limit of
+a KMS-held pure Ed25519 signing key. No level-3 receipt had been issued in the earlier shape.
 
 Added later, without a version change (nothing in a receipt differs): the signed tree head with its own signature domain
 (§5.1, §8.5), the public log endpoints (§8.6), and checkers verifying a consistency proof where an anchor is at a different

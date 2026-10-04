@@ -74,6 +74,7 @@ class Claim:
     claimed_at: datetime
     deadline_at: datetime
     attempts: int = 0
+    created_at: datetime | None = None  # when the claim was stored (drives the optional enclave window)
 
 
 @dataclass(frozen=True)

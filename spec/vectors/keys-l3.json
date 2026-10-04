@@ -1,0 +1,25 @@
+{
+  "keys": [
+    {
+      "key_id": "ed25519:If4x36FUomFia_hUBG_SJxt77UtqvkWqWId-9H-XIbk",
+      "public_key": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+      "revoked_at": null,
+      "valid_from": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "key_id": "ed25519:OfcT0KZEJT8EUpQhufUbmwiXnQgpWVnE85kO5hf1E58",
+      "public_key": "PUAXw-hDiVqStwqnTRt-vJyYLM8uxJaMwM1V8Sr0Zgw",
+      "revoked_at": "2026-06-01T00:00:00.000Z",
+      "valid_from": "2026-01-01T00:00:00.000Z"
+    }
+  ],
+  "verifier_builds": [
+    {
+      "code_hash": "sha384:6daff23a8b5c40c161c1e3c3cf3521ddb727b5b7374ac987c9221fef041b4764b110fcd8adf4bb1f5c97ef87144e19e5",
+      "platform": "aws-nitro-enclave",
+      "published_at": "2026-09-20T00:00:00.000Z",
+      "source": "https://example.org/verifier",
+      "version": "1"
+    }
+  ]
+}

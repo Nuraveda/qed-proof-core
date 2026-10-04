@@ -1,4 +1,160 @@
 {
+  "attestation_vectors": [
+    {
+      "description": "Level 3: COSE document from the test enclave, chain to the test root, PCR0 = code_hash, user_data = statement digest, build published.",
+      "expected": {
+        "achieved_trust_level": 1,
+        "checks": {
+          "anchor": "absent",
+          "attestation": true,
+          "claim_digest": true,
+          "inclusion": "absent",
+          "integers_only": true,
+          "key": true,
+          "schema": true,
+          "signature": true,
+          "spec_version": true
+        },
+        "valid": true,
+        "verdict": "verified"
+      },
+      "file": "042-l3-valid.json",
+      "keyset": "keys-l3.json",
+      "nitro_root": "nitro-test-root.pem"
+    },
+    {
+      "description": "The document's chain ends at a different root than the one trusted: attestation_chain, achieved level 1.",
+      "expected": {
+        "achieved_trust_level": 1,
+        "checks": {
+          "anchor": "absent",
+          "attestation": "attestation_chain",
+          "claim_digest": true,
+          "inclusion": "absent",
+          "integers_only": true,
+          "key": true,
+          "schema": true,
+          "signature": true,
+          "spec_version": true
+        },
+        "valid": true,
+        "verdict": "verified"
+      },
+      "file": "043-l3-wrong-root.json",
+      "keyset": "keys-l3.json",
+      "nitro_root": "nitro-test-root.pem"
+    },
+    {
+      "description": "The attestation payload was altered after the enclave signed it: attestation_invalid, achieved level 1.",
+      "expected": {
+        "achieved_trust_level": 1,
+        "checks": {
+          "anchor": "absent",
+          "attestation": "attestation_invalid",
+          "claim_digest": true,
+          "inclusion": "absent",
+          "integers_only": true,
+          "key": true,
+          "schema": true,
+          "signature": true,
+          "spec_version": true
+        },
+        "valid": true,
+        "verdict": "verified"
+      },
+      "file": "044-l3-tampered-payload.json",
+      "keyset": "keys-l3.json",
+      "nitro_root": "nitro-test-root.pem"
+    },
+    {
+      "description": "The receipt's code_hash is a published build, but the enclave measured a different PCR0: pcr_mismatch.",
+      "expected": {
+        "achieved_trust_level": 1,
+        "checks": {
+          "anchor": "absent",
+          "attestation": "pcr_mismatch",
+          "claim_digest": true,
+          "inclusion": "absent",
+          "integers_only": true,
+          "key": true,
+          "schema": true,
+          "signature": true,
+          "spec_version": true
+        },
+        "valid": true,
+        "verdict": "verified"
+      },
+      "file": "045-l3-pcr-mismatch.json",
+      "keyset": "keys-l3.json",
+      "nitro_root": "nitro-test-root.pem"
+    },
+    {
+      "description": "The enclave attested a different verdict than the receipt states: statement_mismatch.",
+      "expected": {
+        "achieved_trust_level": 1,
+        "checks": {
+          "anchor": "absent",
+          "attestation": "statement_mismatch",
+          "claim_digest": true,
+          "inclusion": "absent",
+          "integers_only": true,
+          "key": true,
+          "schema": true,
+          "signature": true,
+          "spec_version": true
+        },
+        "valid": true,
+        "verdict": "verified"
+      },
+      "file": "046-l3-statement-mismatch.json",
+      "keyset": "keys-l3.json",
+      "nitro_root": "nitro-test-root.pem"
+    },
+    {
+      "description": "Everything verifies, but the measured build is not in the issuer's verifier_builds: unknown_build.",
+      "expected": {
+        "achieved_trust_level": 1,
+        "checks": {
+          "anchor": "absent",
+          "attestation": "unknown_build",
+          "claim_digest": true,
+          "inclusion": "absent",
+          "integers_only": true,
+          "key": true,
+          "schema": true,
+          "signature": true,
+          "spec_version": true
+        },
+        "valid": true,
+        "verdict": "verified"
+      },
+      "file": "047-l3-unknown-build.json",
+      "keyset": "keys-l3.json",
+      "nitro_root": "nitro-test-root.pem"
+    },
+    {
+      "description": "attestation_document is a different (otherwise valid) document than the one attestation.document_sha256 commits to: attestation_invalid, achieved level 1.",
+      "expected": {
+        "achieved_trust_level": 1,
+        "checks": {
+          "anchor": "absent",
+          "attestation": "attestation_invalid",
+          "claim_digest": true,
+          "inclusion": "absent",
+          "integers_only": true,
+          "key": true,
+          "schema": true,
+          "signature": true,
+          "spec_version": true
+        },
+        "valid": true,
+        "verdict": "verified"
+      },
+      "file": "048-l3-document-hash-mismatch.json",
+      "keyset": "keys-l3.json",
+      "nitro_root": "nitro-test-root.pem"
+    }
+  ],
   "consistency_vectors": [
     {
       "description": "RFC 6962 consistency proof: the 3-leaf tree is a prefix of the 7-leaf tree.",

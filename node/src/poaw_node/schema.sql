@@ -81,6 +81,7 @@ create table qed.receipts (
   leaf_index   bigint not null unique references qed.log_leaves(leaf_index),
   verdict      text not null,
   supersedes   text references qed.receipts(id),
+  attestation_document text,                 -- level 3: base64url COSE_Sign1, beside the body (SPEC §4); body holds its SHA-256
   created_at   timestamptz not null default now()
 );
 

@@ -115,7 +115,7 @@ curl -s https://api.qedproof.site/v1/log/head    # the hosted node's signed head
 |---|---|---|
 | 1 · Signed | the issuer stated it, and it hasn't been altered | ✅ |
 | 2 · Anchored | …and it existed by the anchor time; it can't be backdated or silently deleted | ✅ (EAS on Base) |
-| 3 · Attested | …and a specific published verifier build produced it inside a hardware enclave | specified, not built |
+| 3 · Attested | …and a specific published verifier build produced it inside a hardware enclave | ✅ (AWS Nitro Enclaves, `enclave/`) |
 | 4 · Web-proven | …and the facts came from the destination's TLS session (zkTLS) | specified, not built |
 
 Full definitions: [`spec/SPEC.md`](spec/SPEC.md) §6–§8.
@@ -208,9 +208,10 @@ Environment variables (full list in [`node/src/poaw_node/selfhost.py`](node/src/
 ## Repository layout
 
 ```
-spec/          the receipt spec (poaw/0.2), JSON Schemas, 35 conformance vectors, the reference checker   Apache-2.0
+spec/          the receipt spec (poaw/0.2), JSON Schemas, conformance vectors, the reference checker     Apache-2.0
 core-python/   poaw-core: canonical JSON, hashing, signatures, Merkle log primitives                   Apache-2.0
 node/          the node: claims API, verifiers, signing, Merkle log, anchoring, CLI, Dockerfile        AGPL-3.0
+enclave/       the level-3 verifier image: runs node's verifiers inside an AWS Nitro Enclave           Apache-2.0
 docker-compose.yml   PostgreSQL + the node
 ```
 

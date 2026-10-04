@@ -6,6 +6,7 @@ Shared by the spec tools, the node and the SDK. The conformance vectors are its 
 from __future__ import annotations
 
 import base64
+import copy
 import hashlib
 from typing import Any
 
@@ -116,6 +117,24 @@ def entry_kind(body: Any) -> str | None:
 def pipeline_digest(pipeline: dict) -> str:
     """SPEC §15.2: base64url(SHA-256(JCS(pipeline document))), the same construction as claim_digest."""
     return b64u(sha256(jcs(pipeline)))
+
+
+def enclave_statement(body: dict) -> dict:
+    """SPEC §7.1: what an enclave attests to for a receipt body — the claim digest, the verifier id and version, when it
+    looked, the facts, and the verdict. Copied as-is; no field is added or rewritten."""
+    obs = body["observation"]
+    return copy.deepcopy({
+        "claim_digest": body["claim"]["claim_digest"],
+        "verifier": {"id": obs["verifier"]["id"], "version": obs["verifier"]["version"]},
+        "observed_at": obs["observed_at"],
+        "facts": obs["facts"],
+        "verdict": body["verdict"],
+    })
+
+
+def enclave_statement_digest(body: dict) -> bytes:
+    """SPEC §7.1: SHA-256(JCS(statement)) — the 32 bytes the enclave puts in the attestation document's `user_data`."""
+    return sha256(jcs(enclave_statement(body)))
 
 
 def claim_digest(claim: dict) -> str:

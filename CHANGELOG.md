@@ -11,6 +11,28 @@ The client libraries have their own changelogs: [Python SDK](https://github.com/
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-04
+
+Trust level 3: a verdict decided inside a hardware enclave, which anyone can check against AWS's own root of trust.
+
+### Added
+
+- Spec §7.1 **attested observations** (`aws-nitro-enclave`): the enclave's attestation document binds the build that ran
+  (PCR0 = `observation.verifier.code_hash`) to the exact observation and verdict, through `user_data` =
+  SHA-256(JCS(statement)) over the claim digest, verifier, observed time, facts and verdict. The signed body carries
+  `attestation: { type, document_sha256 }`; the document travels beside it as `attestation_document`, so the signed
+  message stays small. Levels are cumulative: level 3 also requires level 2 (inclusion and a verified anchor).
+- `poaw-keys.json` `verifier_builds`: the enclave builds an issuer accepts.
+- `poaw_core`: `enclave_statement`, `enclave_statement_digest`, and `poaw_core.nitro` (COSE ES384, certificate chain to
+  the pinned AWS Nitro Enclaves root, PCR and statement checks; a strict CBOR decoder that also reads the
+  indefinite-length maps real attestation documents use). A real document is included as a test fixture.
+- Reference checker: level-3 checks with reasons `attestation_invalid`, `attestation_chain`, `pcr_mismatch`,
+  `statement_mismatch`, `unknown_build`; `--nitro-root` for tests only. Vectors 042-048.
+- `enclave/`: the program that runs inside the enclave. It executes the open-source verifiers and verdict rules, reads
+  the destination over TLS that terminates inside the enclave, and asks the Nitro Security Module to attest each decision.
+  Its Dockerfile pins the base image and every dependency by hash.
+- Self-hosted node: the enclave work queue and `qed.receipts.attestation_document` (additive).
+
 ## [0.6.2] - 2026-10-04
 
 ### Changed
@@ -126,6 +148,7 @@ Initial release.
 - A verification node with GitHub and HTTP verifiers, a verdict engine and a receipt builder.
 
 [Unreleased]: https://github.com/Nuraveda/qed-proof-core/compare/v0.6.0...HEAD
+[0.7.0]: https://github.com/Nuraveda/qed-proof-core/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/Nuraveda/qed-proof-core/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/Nuraveda/qed-proof-core/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Nuraveda/qed-proof-core/compare/v0.5.0...v0.6.0

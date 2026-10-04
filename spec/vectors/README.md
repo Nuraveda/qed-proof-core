@@ -21,8 +21,9 @@ domain, one with a fifth body field. The checker reports `{valid, checks: {shape
 and the same proof with a wrong `first_root`. `expected.valid` is the result of RFC 9162 §2.1.4.2 verification over
 `(first, second, first_root, second_root, proof)`.
 
-**Not covered offline:** anchor checks (§8.4) need a blockchain RPC, and attestation (trust level ≥ 3) needs a platform root of
-trust. A receipt that claims level 2 without a verifiable anchor is reported at its *achieved* level, 1 (vector 016).
+**Attestation (042–047):** listed under `attestation_vectors`. Level-3 receipts (SPEC §7.1) whose COSE document is signed by a deterministic *test* chain (`nitro-test-root.pem`, never AWS): valid, wrong root, tampered payload, PCR mismatch, statement mismatch, unknown build. Each entry names `keyset` (`keys-l3.json`: `keys.json`'s keys plus `verifier_builds`) and `nitro_root`, the root a checker is given in place of the pinned AWS root (a test-only override; `check.py --nitro-root`). `expected.checks.attestation` is `true` or the reason code; only the valid one achieves level 3, the rest stay at 1 and remain valid receipts.
+
+**Not covered offline:** anchor checks (§8.4) need a blockchain RPC. A receipt that claims level 2 without a verifiable anchor is reported at its *achieved* level, 1 (vector 016).
 
 Regenerate with `uv run oss/spec/tools/generate_vectors.py`. CI runs it with `--check`, and it fails on any byte difference.
 The generator asserts that the reference checker agrees with the intent written for each vector, so a checker bug can't
