@@ -11,6 +11,12 @@ The client libraries have their own changelogs: [Python SDK](https://github.com/
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-04
+
+### Changed
+
+- README: screenshots of the public log and of a receipt checked in the browser, and a short section on the public log API.
+
 ## [0.6.1] - 2026-10-04
 
 ### Changed
@@ -120,6 +126,7 @@ Initial release.
 - A verification node with GitHub and HTTP verifiers, a verdict engine and a receipt builder.
 
 [Unreleased]: https://github.com/Nuraveda/qed-proof-core/compare/v0.6.0...HEAD
+[0.6.2]: https://github.com/Nuraveda/qed-proof-core/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/Nuraveda/qed-proof-core/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Nuraveda/qed-proof-core/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Nuraveda/qed-proof-core/compare/v0.4.0...v0.5.0

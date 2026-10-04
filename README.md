@@ -48,7 +48,7 @@ shows**, in a form a third party can verify.
 
 ## Contents
 
-- [How it works](#how-it-works)
+- [How it works](#how-it-works) · [The public log](#the-public-log)
 - [Verdicts and trust levels](#verdicts-and-trust-levels)
 - [What it can check today](#what-it-can-check-today)
 - [Quickstart (self-host)](#quickstart-self-host)
@@ -85,6 +85,21 @@ Principles the code enforces:
 - **Evidence comes from the destination**, never from the agent's own report.
 - A verifier error, timeout or missing permission gives **`unverifiable`**, never `verified`.
 - Receipts are **append-only** (the database refuses updates and deletes). They store **fingerprints, not content**.
+
+### The public log
+
+Every receipt is a leaf in the log, and the log is free to read: no account, no key, open to any website. The node
+serves a signed tree head, inclusion and consistency proofs, the anchor history and an entry ledger that shows hashes
+only, so nobody's claims are exposed (`GET /v1/log/head`, `/consistency`, `/proof`, `/anchors`, `/entries`; spec §8.5–§8.6).
+
+```bash
+curl -s https://api.qedproof.site/v1/log/head    # the hosted node's signed head and latest anchor
+```
+
+<p align="center">
+  <a href="https://qedproof.site/log/"><img src="https://qedproof.site/media/readme-log.png" alt="The public log on qedproof.site: the signed head (9 entries, its root hash and signing key), anchored up to entry 9 on Base Sepolia (testnet) at block 47,309,207, the anchors table, and the entry ledger of leaf hashes." width="760"></a>
+  <br><sub>The hosted node's log at <a href="https://qedproof.site/log/">qedproof.site/log</a>. Base Sepolia is a testnet.</sub>
+</p>
 
 ## Verdicts and trust levels
 
@@ -166,6 +181,14 @@ uv run spec/tools/check.py receipt.json keys.json --rpc https://sepolia.base.org
 
 The checker verifies the signature, the Merkle inclusion proof and (with `--rpc`) the on-chain anchor, and reports
 the trust level it could actually confirm. `node/smoke.py` does all of this against a running node in one command.
+
+A hosted receipt page runs the same checks in the reader's browser, with no QED Proof account. This is a real
+receipt: the agent claimed a push, GitHub had no such commit, and the receipt still verifies to trust level 2.
+
+<p align="center">
+  <a href="https://qedproof.site/r/rcpt_01M3DK4CJD42ZC4HN3BBMKGTW2/"><img src="https://qedproof.site/media/readme-receipt.png" alt="A public receipt page: verdict Failed for a github.commit.push claim, decided failed (not_found), with four checks passed in the browser: signed by the issuer's published key, the claim wasn't altered after signing, included in the append-only log, and the log root anchored on Base Sepolia. Trust level achieved: 2." width="680"></a>
+  <br><sub>Open this receipt: <a href="https://qedproof.site/r/rcpt_01M3DK4CJD42ZC4HN3BBMKGTW2/">qedproof.site/r/rcpt_01M3DK4C…GTW2</a></sub>
+</p>
 
 ## Configuration
 
