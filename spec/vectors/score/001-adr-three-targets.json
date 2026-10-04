@@ -1,0 +1,67 @@
+{
+  "as_of": "2026-10-04T12:00:00.000Z",
+  "description": "Three fresh verified receipts on three targets: the ADR example, 69, provisional.",
+  "expected": {
+    "as_of": "2026-10-04T12:00:00.000Z",
+    "counted": 3,
+    "distinct_targets": 3,
+    "formula": "score/v0",
+    "provisional": true,
+    "score": 69,
+    "unverifiable": 0,
+    "verdicts": {
+      "failed": 0,
+      "late": 0,
+      "mismatch": 0,
+      "verified": 3
+    },
+    "window_days": 90
+  },
+  "receipts": [
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example0"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0000",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example1"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0001",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example2"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0002",
+      "verdict": {
+        "value": "verified"
+      }
+    }
+  ]
+}

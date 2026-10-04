@@ -1,0 +1,472 @@
+{
+  "as_of": "2026-10-04T12:00:00.000Z",
+  "description": "Thirty fresh verified receipts on thirty targets: 93, no longer provisional.",
+  "expected": {
+    "as_of": "2026-10-04T12:00:00.000Z",
+    "counted": 30,
+    "distinct_targets": 30,
+    "formula": "score/v0",
+    "provisional": false,
+    "score": 93,
+    "unverifiable": 0,
+    "verdicts": {
+      "failed": 0,
+      "late": 0,
+      "mismatch": 0,
+      "verified": 30
+    },
+    "window_days": 90
+  },
+  "receipts": [
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example0"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0000",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example1"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0001",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example2"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0002",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example3"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0003",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example4"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0004",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example5"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0005",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example6"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0006",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example7"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0007",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example8"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0008",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example9"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0009",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example10"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0010",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example11"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0011",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example12"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0012",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example13"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0013",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example14"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0014",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example15"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0015",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example16"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0016",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example17"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0017",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example18"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0018",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example19"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0019",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example20"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0020",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example21"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0021",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example22"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0022",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example23"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0023",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example24"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0024",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example25"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0025",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example26"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0026",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example27"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0027",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example28"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0028",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example29"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0029",
+      "verdict": {
+        "value": "verified"
+      }
+    }
+  ]
+}

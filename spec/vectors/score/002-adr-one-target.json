@@ -1,0 +1,67 @@
+{
+  "as_of": "2026-10-04T12:00:00.000Z",
+  "description": "Three fresh verified receipts on one target: repeats decay, 66, provisional.",
+  "expected": {
+    "as_of": "2026-10-04T12:00:00.000Z",
+    "counted": 3,
+    "distinct_targets": 1,
+    "formula": "score/v0",
+    "provisional": true,
+    "score": 66,
+    "unverifiable": 0,
+    "verdicts": {
+      "failed": 0,
+      "late": 0,
+      "mismatch": 0,
+      "verified": 3
+    },
+    "window_days": 90
+  },
+  "receipts": [
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0000",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0001",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/example"
+      },
+      "issued_at": "2026-10-04T12:00:00.000Z",
+      "receipt_id": "rcpt_0002",
+      "verdict": {
+        "value": "verified"
+      }
+    }
+  ]
+}

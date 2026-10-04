@@ -1,0 +1,21 @@
+{
+  "as_of": "2026-10-04T12:00:00.000Z",
+  "description": "No receipts: the prior alone, 50, provisional.",
+  "expected": {
+    "as_of": "2026-10-04T12:00:00.000Z",
+    "counted": 0,
+    "distinct_targets": 0,
+    "formula": "score/v0",
+    "provisional": true,
+    "score": 50,
+    "unverifiable": 0,
+    "verdicts": {
+      "failed": 0,
+      "late": 0,
+      "mismatch": 0,
+      "verified": 0
+    },
+    "window_days": 90
+  },
+  "receipts": []
+}

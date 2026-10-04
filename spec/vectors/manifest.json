@@ -1,6 +1,72 @@
 {
+  "consistency_vectors": [
+    {
+      "description": "RFC 6962 consistency proof: the 3-leaf tree is a prefix of the 7-leaf tree.",
+      "expected": {
+        "valid": true
+      },
+      "file": "040-consistency-valid.json"
+    },
+    {
+      "description": "The same proof, but first_root is not the root of the first 3 leaves: must fail.",
+      "expected": {
+        "valid": false
+      },
+      "file": "041-consistency-wrong-old-root.json"
+    }
+  ],
   "keyset": "keys.json",
   "spec_version": "poaw/0.2",
+  "tree_head_vectors": [
+    {
+      "description": "A signed tree head over the 7-leaf log of the inclusion vectors: valid.",
+      "expected": {
+        "checks": {
+          "key": true,
+          "shape": true,
+          "signature": true
+        },
+        "valid": true
+      },
+      "file": "036-tree-head-valid.json"
+    },
+    {
+      "description": "The tree_size was changed after signing.",
+      "expected": {
+        "checks": {
+          "key": true,
+          "shape": true,
+          "signature": false
+        },
+        "valid": false
+      },
+      "file": "037-tree-head-tampered.json"
+    },
+    {
+      "description": "A tree head body signed under the receipt domain: the signature must not verify.",
+      "expected": {
+        "checks": {
+          "key": true,
+          "shape": true,
+          "signature": false
+        },
+        "valid": false
+      },
+      "file": "038-tree-head-signed-as-receipt.json"
+    },
+    {
+      "description": "A body with a fifth field is not a tree head (\u00a78.5: exactly four fields).",
+      "expected": {
+        "checks": {
+          "key": false,
+          "shape": false,
+          "signature": false
+        },
+        "valid": false
+      },
+      "file": "039-tree-head-extra-field.json"
+    }
+  ],
   "vectors": [
     {
       "description": "Signed L1 receipt, verified.",

@@ -1,6 +1,7 @@
 """SPEC §8.4: check a receipt's `proof.anchor` (scheme `eas`) against a public JSON-RPC endpoint. It needs no issuer API.
 
-It needs only the chain: EAS.getAttestation(uid) must be a live, unrevoked attestation made by an address the issuer
+It needs only the chain (plus, when the anchored size differs from the receipt's, an RFC 6962 consistency proof the caller
+supplies or fetches from the issuer): EAS.getAttestation(uid) must be a live, unrevoked attestation made by an address the issuer
 publishes, under a schema the issuer publishes, whose data decodes to this proof's (log_id, tree_size, root_hash).
 """
 from __future__ import annotations
@@ -27,8 +28,22 @@ def _rpc(url: str, method: str, *params):
     return body["result"]
 
 
-def check_anchor(proof: dict, keyset: dict, rpc_url: str, b64u_decode) -> dict:
-    """Return {"ok": bool, "reason": str, "proven_by": unix seconds | None}. Any doubt → ok False, never a pass."""
+def check_consistency(doc: dict, first: int, second: int, old_root: str, new_root: str) -> bool:
+    """SPEC §8.4: `doc` (shaped like GET /v1/log/consistency) proves the size-`first` tree with root `old_root` is a prefix of
+    the size-`second` tree with root `new_root`. The roots come from the caller's own trusted sources, never from `doc`."""
+    import poaw_core as ref
+    try:
+        if not isinstance(doc, dict) or doc.get("first") != first or doc.get("second") != second:
+            return False
+        proof = [ref.b64u_decode(h) for h in doc["proof"]]
+        return ref.verify_consistency(first, second, ref.b64u_decode(old_root), ref.b64u_decode(new_root), proof)
+    except Exception:
+        return False
+
+
+def check_anchor(proof: dict, keyset: dict, rpc_url: str, b64u_decode, get_consistency=None) -> dict:
+    """`get_consistency(first, second)` returns a consistency document (shaped like GET /v1/log/consistency) or None; it is
+    only consulted when the anchor's size differs from the proof's. Return {"ok": bool, "reason": str, "proven_by": unix seconds | None}. Any doubt → ok False, never a pass."""
     a = proof["anchor"]
     try:
         if a.get("scheme") != "eas":
@@ -56,7 +71,20 @@ def check_anchor(proof: dict, keyset: dict, rpc_url: str, b64u_decode) -> dict:
     if log_id != b64u_decode(proof["log_id"]) or size != a["tree_size"]:
         return {"ok": False, "reason": "log_or_size_mismatch", "proven_by": None}
     if a["tree_size"] != proof["tree_size"]:
-        return {"ok": False, "reason": "consistency_proof_required", "proven_by": None}  # this issuer proves at the anchored size
+        # §8.4: connect the two roots with an RFC 6962 consistency proof. The anchored root is the chain's (`root`); the
+        # receipt's is `proof.root_hash`. Whichever tree is smaller is the "old" one; the larger must extend it.
+        doc = get_consistency(*sorted((a["tree_size"], proof["tree_size"]))) if get_consistency else None
+        if doc is None:
+            return {"ok": False, "reason": "consistency_proof_required", "proven_by": None}
+        import poaw_core as ref
+        chain_root, proof_root = ref.b64u(root), proof["root_hash"]
+        if a["tree_size"] < proof["tree_size"]:
+            ok = check_consistency(doc, a["tree_size"], proof["tree_size"], chain_root, proof_root)
+        else:
+            ok = check_consistency(doc, proof["tree_size"], a["tree_size"], proof_root, chain_root)
+        if not ok:
+            return {"ok": False, "reason": "consistency_proof_invalid", "proven_by": None}
+        return {"ok": True, "reason": "anchored", "proven_by": time_}
     if root != b64u_decode(proof["root_hash"]):
         return {"ok": False, "reason": "root_mismatch", "proven_by": None}
     return {"ok": True, "reason": "anchored", "proven_by": time_}  # EAS sets time = block.timestamp

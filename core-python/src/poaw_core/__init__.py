@@ -14,10 +14,13 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
+from .score import score_v0  # noqa: E402,F401  (score/v0, SPEC appendix)
+
 SPEC_VERSION = "poaw/0.1"  # what an issuer says when it uses nothing introduced in 0.2 (SPEC §16)
 SPEC_VERSION_V02 = "poaw/0.2"  # required when a body carries `policy`, and for every change entry
 SIG_DOMAIN = b"POAW-RECEIPT-V0\n"
 CHANGE_SIG_DOMAIN = b"POAW-CHANGE-V0\n"  # §5.1: a change entry is signed under its own domain
+TREE_HEAD_SIG_DOMAIN = b"POAW-TREE-HEAD-V0\n"  # §8.5: a signed tree head, so it can never verify as a receipt or change
 
 
 # --- encoding (§3) ---------------------------------------------------------------------------
@@ -79,6 +82,30 @@ def sign_change(sk: Ed25519PrivateKey, body: dict) -> dict:
 
 def verify_change_signature(pk_raw: bytes, body: dict, sig_value: str) -> bool:
     return verify_signature(pk_raw, body, sig_value, CHANGE_SIG_DOMAIN)
+
+
+TREE_HEAD_FIELDS = ("log_id", "tree_size", "root_hash", "issued_at")
+
+
+def tree_head_body(log_id: str, tree_size: int, root_hash: bytes, issued_at: str) -> dict:
+    """The body of a signed tree head (SPEC §8.5): which log, how big, its root, and when the issuer said so."""
+    if tree_size < 0:
+        raise ValueError("tree_size must be >= 0")
+    return {"log_id": log_id, "tree_size": tree_size, "root_hash": b64u(root_hash), "issued_at": issued_at}
+
+
+def sign_tree_head(sk: Ed25519PrivateKey, body: dict) -> dict:
+    """Sign a tree head under its own domain (§8.5), so it can never verify as a receipt or a change entry."""
+    return sign_body(sk, body, TREE_HEAD_SIG_DOMAIN)
+
+
+def verify_tree_head(pk_raw: bytes, body: dict, sig_value: str) -> bool:
+    """True iff `body` has exactly the §8.5 fields and `sig_value` signs it under the tree-head domain."""
+    if not isinstance(body, dict) or set(body) != set(TREE_HEAD_FIELDS):
+        return False
+    if not isinstance(body["tree_size"], int) or isinstance(body["tree_size"], bool) or body["tree_size"] < 0:
+        return False
+    return verify_signature(pk_raw, body, sig_value, TREE_HEAD_SIG_DOMAIN)
 
 
 def entry_kind(body: Any) -> str | None:

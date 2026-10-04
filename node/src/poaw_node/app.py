@@ -3,14 +3,19 @@ from __future__ import annotations
 
 import base64
 import binascii
-from datetime import datetime
-from typing import Awaitable, Callable
+import re
+from datetime import datetime, timezone
+from typing import Awaitable, Callable, NamedTuple
 
+import poaw_core
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 
 from pydantic import ValidationError
 
 from .models import ClaimIn
+from .receipt import ts
 from .store import key_hash
 from .service import Node
 from .verifiers import REGISTRY, load_builtin
@@ -20,6 +25,9 @@ CLAIMS_PER_MIN_PER_KEY = 60
 READS_PER_MIN_PER_IP = 120
 LIST_CLAIMS_DEFAULT_LIMIT = 50
 LIST_CLAIMS_MAX_LIMIT = 200
+LOG_PAGE_MAX = 100
+ENTRIES_DEFAULT_LIMIT = 50
+ANCHORS_DEFAULT_LIMIT = 20
 MAX_BODY_BYTES = 64 * 1024
 
 
@@ -83,6 +91,44 @@ SECURITY_HEADERS = {
 }
 
 
+# Free public reads (lane public-log): the log, a receipt, and the key set need no key and answer cross-origin GETs from
+# any site, with no credentials. Nothing authenticated or write-capable matches this pattern.
+PUBLIC_READ_PATH = re.compile(r"^/(v1/log/(head|consistency|proof|anchors|entries)|v1/receipts/[^/]+|\.well-known/poaw-keys\.json)$")
+
+
+class PublicCors:
+    """ASGI middleware: `Access-Control-Allow-Origin: *` on the public read paths only, and a preflight answer for them.
+    Deployments that add an allow-list CORSMiddleware for their own web app should wrap THIS outside it, so a preflight
+    from any origin reaches these paths."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or not PUBLIC_READ_PATH.match(scope["path"]):
+            return await self.app(scope, receive, send)
+        if scope["method"] == "OPTIONS":
+            from fastapi.responses import Response
+            req = dict(scope["headers"])
+            if b"origin" not in req:
+                return await self.app(scope, receive, send)
+            resp = Response(status_code=204, headers={
+                "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+                "Access-Control-Allow-Headers": "Authorization, Content-Type", "Access-Control-Max-Age": "600",
+                "Vary": "Origin"} | SECURITY_HEADERS)
+            return await resp(scope, receive, send)
+
+        async def wrapped(message):
+            if message["type"] == "http.response.start":
+                headers = [(k, v) for k, v in message["headers"]
+                           if k.lower() not in (b"access-control-allow-origin", b"access-control-allow-credentials")]
+                headers += [(b"access-control-allow-origin", b"*"), (b"access-control-expose-headers", b"Retry-After")]
+                message = {**message, "headers": headers}
+            await send(message)
+
+        return await self.app(scope, receive, wrapped)
+
+
 EDGE_IP_HEADER = "x-qed-viewer-ip"
 EDGE_SECRET_HEADER = "x-qed-edge"
 
@@ -115,11 +161,23 @@ def client_ip(request: Request) -> str:
     return (request.client.host if request.client else "unknown")[:64]
 
 
+class Credential(NamedTuple):
+    """Who a bearer token speaks for. `scopes` is None for a workspace API key (full access to the key routes) and a set of
+    scope names for a limited credential (e.g. an OAuth token); a route that needs a scope refuses a credential without it."""
+    workspace_id: str
+    scopes: frozenset[str] | None = None
+    kind: str = "key"
+    audience: str | None = None  # the resource server an OAuth token was issued for; None for an API key
+
+
 def create_app(get_node: Callable[[], Awaitable[Node]], *, log_id: str, tick_enabled: Callable[[], bool],
                after_tick: Callable[[], Awaitable[dict]] | None = None,
                keyset: Callable[[], Awaitable[dict]] | None = None,
-               admission: Callable[[str, ClaimIn], Awaitable[str | None]] | None = None) -> FastAPI:
+               admission: Callable[[str, ClaimIn], Awaitable[str | None]] | None = None,
+               credential: Callable[[str], Awaitable[Credential | None]] | None = None) -> FastAPI:
+    head_cache: dict[int, dict] = {}  # signed head per tree size, so a KMS signer isn't called on every read
     app = FastAPI(title="poaw-node", version="0.1.0", docs_url=None, redoc_url=None, openapi_url=None)
+    app.add_middleware(PublicCors)
     app.add_middleware(_BodyCap)  # inner to `harden`, so a 413 from either still gets the security headers
 
     @app.middleware("http")
@@ -138,20 +196,51 @@ def create_app(get_node: Callable[[], Awaitable[Node]], *, log_id: str, tick_ena
             resp.headers["Cache-Control"] = "no-store"
         return resp
 
+    @app.exception_handler(RequestValidationError)
+    async def bad_params(request: Request, exc: RequestValidationError):
+        # The public log API answers bad parameters with 400 (contract); every other route keeps FastAPI's 422.
+        if request.url.path.startswith("/v1/log/"):
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"detail": "invalid query parameters"}, status_code=400)
+        return await request_validation_exception_handler(request, exc)
+
     def limited() -> HTTPException:
         return HTTPException(status_code=429, detail="rate limit exceeded", headers={"Retry-After": "5"})
 
     async def node() -> Node:
         return await get_node()
 
-    async def workspace(authorization: str = Header(default=""), n: Node = Depends(node)) -> str:
-        scheme, _, key = authorization.partition(" ")
-        ws = await n.store.workspace_for_key(key) if scheme.lower() == "bearer" and key else None
-        if not ws:
-            raise HTTPException(status_code=401, detail="invalid or missing API key")
-        if not await n.store.rate_take(f"key:{key_hash(key)}", per_minute=CLAIMS_PER_MIN_PER_KEY):
-            raise limited()
-        return ws
+    async def resolve(token: str, n: Node) -> Credential | None:
+        # `credential` lets a deployment accept more than API keys (the hosted service accepts OAuth access tokens). Without
+        # it a bearer token is a workspace API key, exactly as before.
+        if credential is not None:
+            return await credential(token)
+        ws = await n.store.workspace_for_key(token)
+        return Credential(ws) if ws else None
+
+    def needs(scope: str | None):
+        async def dep(authorization: str = Header(default=""), n: Node = Depends(node)) -> Credential:
+            scheme, _, token = authorization.partition(" ")
+            cred = await resolve(token, n) if scheme.lower() == "bearer" and token else None
+            if not cred:
+                raise HTTPException(status_code=401, detail="invalid or missing API key",
+                                    headers={"WWW-Authenticate": "Bearer"})
+            if scope and cred.scopes is not None and scope not in cred.scopes:
+                raise HTTPException(status_code=403, detail=f"this credential lacks the {scope} scope")
+            if not await n.store.rate_take(f"key:{key_hash(token)}", per_minute=CLAIMS_PER_MIN_PER_KEY):
+                raise limited()
+            return cred
+        return dep
+
+    async def _ws(cred: Credential = Depends(needs(None))) -> str:
+        return cred.workspace_id
+
+    def workspace_with(scope: str):
+        async def dep(cred: Credential = Depends(needs(scope))) -> str:
+            return cred.workspace_id
+        return dep
+
+    workspace = _ws  # any valid credential
 
     @app.get("/.well-known/poaw-keys.json")
     async def poaw_keys() -> dict:
@@ -160,12 +249,18 @@ def create_app(get_node: Callable[[], Awaitable[Node]], *, log_id: str, tick_ena
             raise HTTPException(status_code=404)
         return await keyset()
 
+    @app.get("/v1/whoami")
+    async def whoami(cred: Credential = Depends(needs(None))) -> dict:
+        # Lets a resource server (the hosted MCP) check a credential before using it. Any valid credential may ask.
+        return {"workspace_id": cred.workspace_id, "kind": cred.kind,
+                "scopes": sorted(cred.scopes) if cred.scopes is not None else None, "audience": cred.audience}
+
     @app.get("/healthz")
     async def healthz() -> dict:
         return {"ok": True}
 
     @app.post("/v1/claims", status_code=202)
-    async def submit(c: ClaimIn, ws: str = Depends(workspace), n: Node = Depends(node)) -> dict:
+    async def submit(c: ClaimIn, ws: str = Depends(workspace_with("claims:submit")), n: Node = Depends(node)) -> dict:
         # A deployment's admission policy (e.g. a plan quota) may refuse a NEW claim up front. A refused claim creates
         # nothing and gets no receipt. Nothing here can change the verdict of a claim that was accepted.
         if admission is not None and (refusal := await admission(ws, c)):
@@ -184,7 +279,7 @@ def create_app(get_node: Callable[[], Awaitable[Node]], *, log_id: str, tick_ena
     @app.get("/v1/claims")
     async def list_claims(limit: int = Query(LIST_CLAIMS_DEFAULT_LIMIT, ge=1, le=LIST_CLAIMS_MAX_LIMIT),
                           cursor: str | None = None, agent_id: str | None = None, action: str | None = None,
-                          verdict: str | None = None, state: str | None = None, ws: str = Depends(workspace),
+                          verdict: str | None = None, state: str | None = None, ws: str = Depends(workspace_with("claims:read")),
                           n: Node = Depends(node)) -> dict:
         # Newest first, keyset-paginated on (created_at desc, id desc). `limit` items are returned; one extra row is
         # fetched to tell whether a next page exists, so `next_cursor` is only set when it does (SPEC parity: each
@@ -200,7 +295,7 @@ def create_app(get_node: Callable[[], Awaitable[Node]], *, log_id: str, tick_ena
         return {"claims": claims, "next_cursor": next_cursor}
 
     @app.get("/v1/connections")
-    async def list_connections(ws: str = Depends(workspace), n: Node = Depends(node)) -> dict:
+    async def list_connections(ws: str = Depends(workspace_with("claims:read")), n: Node = Depends(node)) -> dict:
         # What this workspace can have verified: each active connection with the verifier actions its provider
         # supports here, plus the actions that need no connection. Deliberately no account identifiers (the key holder
         # is usually an agent; the console shows names to signed-in members). Lane connections-list-api.
@@ -218,7 +313,7 @@ def create_app(get_node: Callable[[], Awaitable[Node]], *, log_id: str, tick_ena
         }
 
     @app.get("/v1/claims/{claim_id}")
-    async def claim_status(claim_id: str, ws: str = Depends(workspace), n: Node = Depends(node)) -> dict:
+    async def claim_status(claim_id: str, ws: str = Depends(workspace_with("claims:read")), n: Node = Depends(node)) -> dict:
         s = await n.store.claim_status(ws, claim_id)
         if not s:
             raise HTTPException(status_code=404, detail="claim not found")
@@ -242,6 +337,72 @@ def create_app(get_node: Callable[[], Awaitable[Node]], *, log_id: str, tick_ena
         if not r:
             raise HTTPException(status_code=404, detail="receipt not found")
         return r
+
+    async def public_read(request: Request, n: Node) -> None:
+        if not await n.store.rate_take(f"ip:{client_ip(request)}", per_minute=READS_PER_MIN_PER_IP):
+            raise limited()
+
+    @app.get("/v1/log/head")
+    async def log_head(request: Request, n: Node = Depends(node)) -> dict:
+        await public_read(request, n)
+        size = await n.store.log_size()
+        # An empty log is a valid, signed head: size 0 and the RFC 6962 root of the empty tree, SHA-256(""). A checker can
+        # then tell "empty" from "unreachable", and the first receipt's head is consistent with it.
+        root = poaw_core.sha256(b"") if size == 0 else await n.store.log_root(size)
+        if root is None:
+            raise HTTPException(status_code=503, detail="log root not available")
+        cached = head_cache.get(size)
+        if cached is None or cached["body"]["root_hash"] != poaw_core.b64u(root):
+            body = poaw_core.tree_head_body(log_id, size, root, ts(datetime.now(timezone.utc)))
+            sig = n.signer.sign(poaw_core.TREE_HEAD_SIG_DOMAIN + poaw_core.jcs(body))
+            cached = {"body": body, "signature": {"alg": "Ed25519", "key_id": n.key_id, "value": poaw_core.b64u(sig)}}
+            head_cache.clear()
+            head_cache[size] = cached
+        return {"tree_head": cached, "anchor": await n.store.latest_anchor()}
+
+    @app.get("/v1/log/consistency")
+    async def log_consistency(request: Request, first: int = Query(..., ge=1), second: int = Query(..., ge=1),
+                              n: Node = Depends(node)) -> dict:
+        await public_read(request, n)
+        if first > second:
+            raise HTTPException(status_code=400, detail="first must be <= second")
+        if second > await n.store.log_size():
+            raise HTTPException(status_code=404, detail="second is beyond the current tree size")
+        first_root, second_root, proof = await n.store.log_consistency(first, second)
+        return {"log_id": log_id, "first": first, "second": second, "first_root": poaw_core.b64u(first_root),
+                "second_root": poaw_core.b64u(second_root), "proof": [poaw_core.b64u(h) for h in proof]}
+
+    @app.get("/v1/log/proof")
+    async def log_proof(request: Request, leaf_index: int = Query(..., ge=0), tree_size: int | None = Query(None, ge=1),
+                        n: Node = Depends(node)) -> dict:
+        await public_read(request, n)
+        current = await n.store.log_size()
+        size = current if tree_size is None else tree_size
+        if size > current or leaf_index >= size:
+            raise HTTPException(status_code=404, detail="no such leaf in a tree of that size")
+        leaf, root, path = await n.store.log_inclusion(leaf_index, size)
+        return {"log_id": log_id, "leaf_index": leaf_index, "tree_size": size, "leaf_hash": poaw_core.b64u(leaf),
+                "root_hash": poaw_core.b64u(root), "inclusion": [poaw_core.b64u(h) for h in path]}
+
+    @app.get("/v1/log/anchors")
+    async def log_anchors(request: Request, limit: int = Query(ANCHORS_DEFAULT_LIMIT, ge=1, le=LOG_PAGE_MAX),
+                          before: int | None = Query(None, ge=1), n: Node = Depends(node)) -> dict:
+        await public_read(request, n)
+        page, nxt = await n.store.list_anchors(limit, before)
+        return {"anchors": page, "next": nxt}
+
+    @app.get("/v1/log/entries")
+    async def log_entries(request: Request, start: int | None = Query(None, ge=0),
+                          limit: int = Query(ENTRIES_DEFAULT_LIMIT, ge=1, le=LOG_PAGE_MAX), n: Node = Depends(node)) -> dict:
+        await public_read(request, n)
+        size = await n.store.log_size()
+        if start is None:
+            start = max(0, size - ENTRIES_DEFAULT_LIMIT)
+        elif start > size:
+            raise HTTPException(status_code=404, detail="start is beyond the current tree size")
+        entries = await n.store.list_entries(start, limit)
+        nxt = start + len(entries)
+        return {"tree_size": size, "entries": entries, "next": nxt if entries and nxt < size else None}
 
     @app.post("/events")
     async def events(request: Request, n: Node = Depends(node)) -> dict:

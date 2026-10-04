@@ -15,6 +15,7 @@ import asyncpg
 import poaw_core
 
 from .models import Claim, ClaimIn
+from .receipt import ts
 
 LOG_LOCK = 0x51ED_0001  # advisory lock key for log appends
 
@@ -188,7 +189,7 @@ class Store:
             # Prove against the latest ANCHORED size that covers this leaf, if there is one (so the proof links to the
             # chain). Otherwise use the current size.
             anchor = await conn.fetchrow(
-                """select tree_size, chain, eas_uid, tx_hash from qed.anchors
+                """select tree_size, chain, eas_uid, tx_hash, block_number, block_time from qed.anchors
                    where status = 'landed' and tree_size > $1 order by tree_size desc limit 1""", i)
             size = anchor["tree_size"] if anchor else await conn.fetchval("select max(tree_size) from qed.log_roots")
             root, path = await with_nodes(conn, lambda get: (poaw_core.mth_range(0, size, get),
@@ -197,8 +198,59 @@ class Store:
                  "inclusion": [poaw_core.b64u(h) for h in path]}
         if anchor:
             proof["anchor"] = {"chain": anchor["chain"], "scheme": "eas", "uid": anchor["eas_uid"],
-                               "tx_hash": anchor["tx_hash"], "tree_size": anchor["tree_size"]}
+                               "tx_hash": anchor["tx_hash"], "tree_size": anchor["tree_size"],
+                               "block_number": anchor["block_number"],
+                               "block_time": ts(anchor["block_time"]) if anchor["block_time"] else None}
         return {"body": body, "signature": sig, "proof": proof}
+
+    # -- public log reads (lane public-log). Hashes only: no receipt ids, no bodies. ---------------------------------
+    async def log_size(self) -> int:
+        return await self.pool.fetchval("select coalesce(max(tree_size), 0) from qed.log_roots")
+
+    async def log_root(self, size: int) -> bytes | None:
+        r = await self.pool.fetchval("select root_hash from qed.log_roots where tree_size = $1", size)
+        return bytes(r) if r is not None else None
+
+    @staticmethod
+    def _anchor_json(a: asyncpg.Record) -> dict:
+        return {"chain": a["chain"], "scheme": "eas", "uid": a["eas_uid"], "tx_hash": a["tx_hash"],
+                "tree_size": a["tree_size"], "root_hash": poaw_core.b64u(bytes(a["root_hash"])),
+                "block_number": a["block_number"], "block_time": ts(a["block_time"]) if a["block_time"] else None}
+
+    async def list_anchors(self, limit: int, before: int | None = None) -> tuple[list[dict], int | None]:
+        """Landed anchors, newest first. Returns (page, next) where `next` is the `before` value for the following page."""
+        rows = await self.pool.fetch(
+            """select tree_size, root_hash, chain, eas_uid, tx_hash, block_number, block_time from qed.anchors
+               where status = 'landed' and ($2::bigint is null or tree_size < $2) order by tree_size desc limit $1""",
+            limit + 1, before)
+        page = [self._anchor_json(r) for r in rows[:limit]]
+        return page, (page[-1]["tree_size"] if len(rows) > limit else None)
+
+    async def latest_anchor(self) -> dict | None:
+        page, _ = await self.list_anchors(1)
+        return page[0] if page else None
+
+    async def list_entries(self, start: int, limit: int) -> list[dict]:
+        rows = await self.pool.fetch(
+            "select leaf_index, leaf_hash, created_at from qed.log_leaves where leaf_index >= $1 "
+            "order by leaf_index limit $2", start, limit)
+        return [{"leaf_index": r["leaf_index"], "leaf_hash": poaw_core.b64u(bytes(r["leaf_hash"])),
+                 "created_at": ts(r["created_at"])} for r in rows]
+
+    async def log_consistency(self, first: int, second: int) -> tuple[bytes, bytes, list[bytes]]:
+        """(root of the first-size tree, root of the second-size tree, RFC 6962 consistency proof). 0 < first <= second."""
+        async with self.pool.acquire() as conn:
+            return await with_nodes(conn, lambda get: (poaw_core.mth_range(0, first, get),
+                                                       poaw_core.mth_range(0, second, get),
+                                                       poaw_core.consistency_proof_nodes(first, second, get)))
+
+    async def log_inclusion(self, index: int, size: int) -> tuple[bytes, bytes, list[bytes]]:
+        """(leaf hash, root of the size-`size` tree, inclusion path). index < size."""
+        async with self.pool.acquire() as conn:
+            leaf = await conn.fetchval("select leaf_hash from qed.log_leaves where leaf_index = $1", index)
+            root, path = await with_nodes(conn, lambda get: (poaw_core.mth_range(0, size, get),
+                                                             poaw_core.inclusion_path_nodes(index, size, get)))
+        return bytes(leaf), root, path
 
     async def pending_alerts(self, limit: int = 20) -> list[dict]:
         rows = await self.pool.fetch(

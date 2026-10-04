@@ -14,6 +14,13 @@ major version, and RFC 6962 inclusion proofs (first, middle and last leaf of an 
 
 **`poaw/0.2` (021–035):** a 0.2 receipt without a policy, a policy that checks out, one with no document to check against, a wrong digest, a wrong version, a policy on a 0.1 body, change entries (valid, tampered, wrong signature domain in both directions, missing policy, carrying a claim, unknown `entry_kind`) and change entries proven included in a log that also holds receipts. Vectors 001–020 are byte-for-byte what they were under 0.1.
 
+**Public log (036–041):** listed in `manifest.json` under their own keys, so `vectors` is exactly what it was.
+`tree_head_vectors` are signed tree heads (SPEC §8.5): a valid one, one with its `tree_size` altered, one signed under the receipt
+domain, one with a fifth body field. The checker reports `{valid, checks: {shape, key, signature}}` against `keys.json`.
+`consistency_vectors` are `GET /v1/log/consistency` responses (§8.4): a valid proof that a 3-leaf tree is a prefix of a 7-leaf tree,
+and the same proof with a wrong `first_root`. `expected.valid` is the result of RFC 9162 §2.1.4.2 verification over
+`(first, second, first_root, second_root, proof)`.
+
 **Not covered offline:** anchor checks (§8.4) need a blockchain RPC, and attestation (trust level ≥ 3) needs a platform root of
 trust. A receipt that claims level 2 without a verifiable anchor is reported at its *achieved* level, 1 (vector 016).
 

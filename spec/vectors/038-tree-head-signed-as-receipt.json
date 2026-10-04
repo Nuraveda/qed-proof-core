@@ -1,0 +1,13 @@
+{
+  "body": {
+    "issued_at": "2026-09-25T14:05:00.000Z",
+    "log_id": "HlunhCNxdyQpjjappYzoNs6C90gnNoxARJaJ52VMxp4",
+    "root_hash": "i1xWPbAzcFF46ZANsMAOI9sR2oAxtObkN-8pJsN2ha0",
+    "tree_size": 7
+  },
+  "signature": {
+    "alg": "Ed25519",
+    "key_id": "ed25519:If4x36FUomFia_hUBG_SJxt77UtqvkWqWId-9H-XIbk",
+    "value": "6UhGR7asY-pl1vfh9UMYbuvltUDuh35ttXZieidcm-58l7XQoh8gXMps5bd74b_EOllFR08sxkxXukbnWyJ4Dw"
+  }
+}

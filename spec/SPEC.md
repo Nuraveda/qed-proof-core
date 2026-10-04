@@ -127,7 +127,7 @@ signature = Ed25519-Sign(issuer_private_key, message)    // RFC 8032, pure Ed255
 ```
 
 A change entry (§14) is signed the same way under its own domain, `"POAW-CHANGE-V0" || 0x0A || JCS(body)`, so a signature
-over one kind of entry can never verify as the other.
+over one kind of entry can never verify as the other. A signed tree head (§8.5) has a third, `"POAW-TREE-HEAD-V0"`.
 
 ```json
 "signature": { "alg": "Ed25519", "key_id": "<§5.2>", "value": "<base64url 64-byte signature>" }
@@ -243,9 +243,52 @@ issuer's published schema) to a `(log_id, tree_size, root_hash, …)` that equal
 `anchor.tree_size` and a root the checker can connect to `proof.root_hash`:
 
 - If `anchor.tree_size == proof.tree_size`, the roots MUST be equal.
-- Otherwise the issuer MUST supply an RFC 6962 **consistency proof** between the two sizes, and the checker MUST verify it.
+- Otherwise the checker MUST obtain an RFC 6962 **consistency proof** between the two sizes (`PROOF(m, D[n])` with `m` the
+  smaller size) and MUST verify it (RFC 9162 §2.1.4.2). The smaller tree's root is the old root and the larger tree's root is
+  the new root; one of them is the attested root and the other is `proof.root_hash`, whichever way round the sizes fall. The
+  checker takes both roots from the attestation and from the receipt, never from the consistency proof's own response. The
+  proof comes from the issuer's `GET /v1/log/consistency` (§8.6), or is supplied alongside the receipt. If the checker cannot
+  obtain one, the anchor is unproven (`consistency_proof_required`), never a pass.
 
 The attestation's block timestamp is the receipt's **proven-by time**.
+
+### 8.5 Signed tree head
+
+An issuer MAY publish a signed statement of the log's current size and root, so anyone can hold it to a single history.
+
+```json
+{
+  "body": { "log_id": "<base64url, as in §8.2>", "tree_size": 88240, "root_hash": "<base64url>", "issued_at": "2026-09-25T14:05:00.000Z" },
+  "signature": { "alg": "Ed25519", "key_id": "<§5.2>", "value": "<base64url 64-byte signature>" }
+}
+```
+
+```
+message = "POAW-TREE-HEAD-V0" || 0x0A || JCS(body)      // its own domain, so it never verifies as a receipt or change entry
+```
+
+A checker MUST reject a tree head unless:
+
+- `body` has exactly the four fields above, `tree_size` is a non-negative integer, and the other three are strings;
+- `signature.alg` is `Ed25519` and `signature.key_id` names a key in the issuer's key set that is valid at `body.issued_at`
+  (§5.2: `valid_from <= issued_at`, and not revoked at or before it); and
+- the signature verifies over the message above.
+
+To check that a receipt's tree belongs to a head, the checker requires `proof.log_id == body.log_id` and
+`proof.tree_size <= body.tree_size`, then: equal sizes need equal roots, otherwise a consistency proof (§8.4) from
+`proof.root_hash` to `body.root_hash` MUST verify. A head that is older than the receipt's tree, or a proof that does not
+verify, is a failure.
+
+### 8.6 Public log endpoints (informative)
+
+An issuer that runs a public log serves these over `GET`, free and without authentication, and answers cross-origin reads.
+Hashes are base64url (§3). They are a convenience for checkers: nothing in §8.3–§8.5 depends on trusting them.
+
+- `GET /v1/log/head` returns `{ "tree_head": <§8.5 object>, "anchor": null | { "chain", "scheme", "uid", "tx_hash", "tree_size", "root_hash", "block_number", "block_time" } }`, the latest landed anchor being the one reported.
+- `GET /v1/log/consistency?first=M&second=N` (`0 < M <= N <=` current size) returns `{ "log_id", "first", "second", "first_root", "second_root", "proof": ["<b64u>", …] }`; `proof` is empty when `M = N`.
+- `GET /v1/log/proof?leaf_index=I&tree_size=N` returns `{ "log_id", "leaf_index", "tree_size", "leaf_hash", "root_hash", "inclusion": ["<b64u>", …] }`.
+- `GET /v1/log/anchors?limit=&before=` returns `{ "anchors": [ … newest first … ], "next": <tree_size> | null }`.
+- `GET /v1/log/entries?start=&limit=` returns `{ "tree_size", "entries": [{ "leaf_index", "leaf_hash", "created_at" }], "next": <index> | null }`. Entries are hashes only; the log does not list receipt ids.
 
 ## 9. Actions and verifier profiles
 
@@ -303,7 +346,8 @@ the ERC-8004 draft stabilises.
 
 `vectors/` holds receipts and change entries with expected checker outcomes: valid at each trust level, tampered body,
 wrong key, revoked key, bad inclusion path, anchor/root mismatch, every verdict value and every reason code, and (from
-`poaw/0.2`) policy digests, change entries, and a signature moved across domains.
+`poaw/0.2`) policy digests, change entries, and a signature moved across domains. The manifest also lists signed tree heads
+(§8.5, `tree_head_vectors`) and consistency proofs (§8.4, `consistency_vectors`) under their own keys.
 Every conforming implementation MUST produce the expected outcome for every vector.
 
 ## 14. Change entries (`poaw/0.2`)
@@ -397,3 +441,42 @@ digest lets its owner show which rule applied without disclosing it to everyone 
 `poaw/0.2` is a minor version. Every `poaw/0.1` receipt is still valid, byte for byte, and checkers MUST keep accepting it.
 Added: the optional `policy` member (§4.1, §15.2); the change entry (§14) with its own signature domain (§5.1); the pipeline
 document (§15). A receipt that uses none of these MAY keep saying `poaw/0.1`.
+
+Added later, without a version change (nothing in a receipt differs): the signed tree head with its own signature domain
+(§5.1, §8.5), the public log endpoints (§8.6), and checkers verifying a consistency proof where an anchor is at a different
+tree size than the receipt's proof (§8.4), which used to be left unproven.
+
+## Appendix: reputation score v0 (`score/v0`)
+
+*Informative.* Nothing in a receipt depends on it. It is a published, deterministic function from one agent's receipts to a
+number, so that anyone holding the receipts gets the same score. There is no model and there are no hidden inputs.
+`poaw_core.score_v0` is the reference implementation; `vectors/score/` holds test vectors; `tools/score.py` computes a score
+from a file of receipts.
+
+**Inputs.** The agent's receipt bodies with `issued_at` in the window `(as_of − 90 days, as_of]`. A receipt that another
+receipt names in `supersedes` is dropped, so only the latest in a chain counts. A receipt with verdict `unverifiable` is
+never scored (§6.1); it is reported in `unverifiable`. Receipts of agents the publisher excludes (for example its own test
+agents) are not scored.
+
+**Points** `s` per receipt by `verdict.value`: `verified` 1.0, `late` 0.6, `mismatch` 0, `failed` 0.
+
+**Weight** `w = r × d`.
+- Recency `r = 0.5 ^ (age_days / 30)`, where `age_days` is the time from `claim.claimed_at` to `as_of` in days (fractional;
+  a `claimed_at` after `as_of` counts as 0).
+- Repeats `d = 1 / sqrt(k)`, where `k` is the receipt's rank (1, 2, 3, …) among the counted receipts with the same
+  `(claim.action, claim.target)`, ordered by `claim.claimed_at` and then `receipt_id` (string order).
+
+**Score.** `score = round_half_up(100 × (Σ w·s + K·P) / (Σ w + K))` with `K = 5` and `P = 0.5`, so no receipts score 50.
+Rounding is half up (a value of exactly `x.5` goes to the next integer), not half to even. The sums run in order of `claimed_at`
+then `receipt_id`, with IEEE 754 doubles.
+
+**Provisional.** The score is provisional while `counted < 30` or `distinct_targets < 3` (distinct `claim.target` values among
+counted receipts). A provisional score MUST be presented with that word and its receipt count.
+
+**Output.** `{ "formula": "score/v0", "as_of": <UTC, millisecond precision>, "window_days": 90, "score": <integer>,
+"provisional": <bool>, "counted": <int>, "unverifiable": <int>, "verdicts": { "verified", "late", "mismatch", "failed" },
+"distinct_targets": <int> }`, where `counted` is the number of scored receipts and `verdicts` counts them by verdict. A
+change to any constant or rule is a new formula id (`score/v1`); `score/v0` results stay reproducible.
+
+Worked examples: three fresh `verified` receipts on three targets score 69 (66 if all on one target); thirty on thirty
+targets score 93.

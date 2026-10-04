@@ -23,7 +23,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parents[2] / "core-python" / "src"))
 import poaw_core as ref  # noqa: E402
-from check import check  # noqa: E402
+from check import check, check_tree_head  # noqa: E402
 
 OUT = Path(__file__).parents[1] / "vectors"
 
@@ -259,6 +259,47 @@ def build() -> list[tuple[str, str, dict, dict, dict | None]]:
     return V
 
 
+def build_log() -> tuple[list[tuple[str, str, dict, dict]], list[tuple[str, str, dict, bool]]]:
+    """Public-log vectors (SPEC §8.5, §8.4). Returns (tree heads, consistency proofs).
+    Tree heads: (name, description, head, expected {valid, checks}). Consistency: (name, description, doc, valid)."""
+    log_id = ref.b64u(ref.sha256(b"example-log"))
+    leaves = [ref.leaf_hash(signed(body(300 + i, {"value": "verified"}, trust_level=2))) for i in range(7)]
+    root7 = ref.mth(leaves)
+
+    def head_body(size: int, root: bytes) -> dict:
+        return ref.tree_head_body(log_id, size, root, "2026-09-25T14:05:00.000Z")
+
+    def head(b: dict, key: Ed25519PrivateKey = KEY_A) -> dict:  # gitleaks:allow — a type annotation, not a secret
+        return {"body": b, "signature": ref.sign_tree_head(key, b)}
+
+    H: list[tuple[str, str, dict, dict]] = []
+    ok = {"valid": True, "checks": {"shape": True, "key": True, "signature": True}}
+    H.append(("036-tree-head-valid", "A signed tree head over the 7-leaf log of the inclusion vectors: valid.", head(head_body(7, root7)), ok))
+    x = head(head_body(7, root7))
+    x["body"]["tree_size"] = 8  # altered after signing
+    H.append(("037-tree-head-tampered", "The tree_size was changed after signing.", x,
+              {"valid": False, "checks": {"shape": True, "key": True, "signature": False}}))
+    b = head_body(7, root7)
+    H.append(("038-tree-head-signed-as-receipt", "A tree head body signed under the receipt domain: the signature must not verify.",
+              {"body": b, "signature": ref.sign_body(KEY_A, b)}, {"valid": False, "checks": {"shape": True, "key": True, "signature": False}}))
+    x = head(head_body(7, root7))
+    x["body"]["extra"] = 1
+    H.append(("039-tree-head-extra-field", "A body with a fifth field is not a tree head (§8.5: exactly four fields).", x,
+              {"valid": False, "checks": {"shape": False, "key": False, "signature": False}}))
+
+    def cdoc(m: int, n: int, *, old: bytes | None = None) -> dict:
+        return {"log_id": log_id, "first": m, "second": n,
+                "first_root": ref.b64u(old if old is not None else ref.mth(leaves[:m])), "second_root": ref.b64u(ref.mth(leaves[:n])),
+                "proof": [ref.b64u(h) for h in ref.consistency_proof(m, n, leaves)]}
+
+    C: list[tuple[str, str, dict, bool]] = [
+        ("040-consistency-valid", "RFC 6962 consistency proof: the 3-leaf tree is a prefix of the 7-leaf tree.", cdoc(3, 7), True),
+        ("041-consistency-wrong-old-root", "The same proof, but first_root is not the root of the first 3 leaves: must fail.",
+         cdoc(3, 7, old=ref.sha256(b"not the old root")), False),
+    ]
+    return H, C
+
+
 def main() -> int:
     vectors = build()
     files: dict[str, str] = {"keys.json": json.dumps(KEYSET, indent=2, sort_keys=True) + "\n"}
@@ -278,8 +319,26 @@ def main() -> int:
         if pipeline is not None:
             entry["pipeline"] = "pipeline.example.json"  # the document the checker is given alongside the entry
         manifest.append(entry)
+    heads, consistencies = build_log()
+    head_manifest, consistency_manifest = [], []
+    for name, desc, head, intent in heads:
+        got = check_tree_head(head, KEYSET)
+        if got["valid"] != intent["valid"] or got["checks"] != intent["checks"]:
+            print(f"reference checker disagrees with intent for {name}: {got}", file=sys.stderr)
+            return 1
+        files[f"{name}.json"] = json.dumps(head, indent=2, sort_keys=True) + "\n"
+        head_manifest.append({"file": f"{name}.json", "description": desc, "expected": {"valid": got["valid"], "checks": got["checks"]}})
+    for name, desc, doc, intent_valid in consistencies:
+        got = ref.verify_consistency(doc["first"], doc["second"], ref.b64u_decode(doc["first_root"]), ref.b64u_decode(doc["second_root"]),
+                                     [ref.b64u_decode(h) for h in doc["proof"]])
+        if got != intent_valid:
+            print(f"reference checker disagrees with intent for {name}: {got}", file=sys.stderr)
+            return 1
+        files[f"{name}.json"] = json.dumps(doc, indent=2, sort_keys=True) + "\n"
+        consistency_manifest.append({"file": f"{name}.json", "description": desc, "expected": {"valid": got}})
     files["pipeline.example.json"] = json.dumps(PIPELINE, indent=2, sort_keys=True) + "\n"
-    files["manifest.json"] = json.dumps({"spec_version": ref.SPEC_VERSION_V02, "keyset": "keys.json", "vectors": manifest}, indent=2, sort_keys=True) + "\n"
+    files["manifest.json"] = json.dumps({"spec_version": ref.SPEC_VERSION_V02, "keyset": "keys.json", "vectors": manifest,
+                                                  "tree_head_vectors": head_manifest, "consistency_vectors": consistency_manifest}, indent=2, sort_keys=True) + "\n"
 
     if "--check" in sys.argv:
         stale = [n for n, t in files.items() if not (OUT / n).exists() or (OUT / n).read_text() != t]
@@ -287,7 +346,7 @@ def main() -> int:
         if stale or extra:
             print(f"vectors out of date: stale={stale} extra={extra}", file=sys.stderr)
             return 1
-        print(f"vectors up to date ({len(vectors)} vectors)")
+        print(f"vectors up to date ({len(vectors)} vectors, {len(heads)} tree heads, {len(consistencies)} consistency proofs)")
         return 0
     OUT.mkdir(exist_ok=True)
     for n, t in files.items():

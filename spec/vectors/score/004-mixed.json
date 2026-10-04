@@ -1,0 +1,188 @@
+{
+  "as_of": "2026-10-04T12:00:00.000Z",
+  "description": "All verdicts, recency, repeat decay, a superseded receipt, an unverifiable one, and both window edges.",
+  "expected": {
+    "as_of": "2026-10-04T12:00:00.000Z",
+    "counted": 7,
+    "distinct_targets": 5,
+    "formula": "score/v0",
+    "provisional": true,
+    "score": 54,
+    "unverifiable": 1,
+    "verdicts": {
+      "failed": 1,
+      "late": 1,
+      "mismatch": 1,
+      "verified": 4
+    },
+    "window_days": 90
+  },
+  "receipts": [
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-08-25T12:00:00.000Z",
+        "target": "x.com/a"
+      },
+      "issued_at": "2026-08-25T12:00:00.000Z",
+      "receipt_id": "rcpt_0001",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-09-14T12:00:00.000Z",
+        "target": "x.com/a"
+      },
+      "issued_at": "2026-09-14T12:00:00.000Z",
+      "receipt_id": "rcpt_0002",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-09-24T12:00:00.000Z",
+        "target": "x.com/b"
+      },
+      "issued_at": "2026-09-24T12:00:00.000Z",
+      "receipt_id": "rcpt_0003",
+      "verdict": {
+        "value": "late"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-09-29T12:00:00.000Z",
+        "target": "x.com/c"
+      },
+      "issued_at": "2026-09-29T12:00:00.000Z",
+      "receipt_id": "rcpt_0004",
+      "verdict": {
+        "value": "mismatch"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-01T12:00:00.000Z",
+        "target": "x.com/a"
+      },
+      "issued_at": "2026-10-01T12:00:00.000Z",
+      "receipt_id": "rcpt_0005",
+      "verdict": {
+        "value": "failed"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-02T12:00:00.000Z",
+        "target": "x.com/d"
+      },
+      "issued_at": "2026-10-02T12:00:00.000Z",
+      "receipt_id": "rcpt_0006",
+      "verdict": {
+        "value": "unverifiable"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-03T12:00:00.000Z",
+        "target": "x.com/e"
+      },
+      "issued_at": "2026-10-03T12:00:00.000Z",
+      "receipt_id": "rcpt_0007",
+      "verdict": {
+        "value": "failed"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T00:00:00.000Z",
+        "target": "x.com/e"
+      },
+      "issued_at": "2026-10-04T00:00:00.000Z",
+      "receipt_id": "rcpt_0008",
+      "supersedes": "rcpt_0007",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-06-26T12:00:00.000Z",
+        "target": "x.com/old"
+      },
+      "issued_at": "2026-07-06T12:00:00.000Z",
+      "receipt_id": "rcpt_0009",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-07-01T12:00:00.000Z",
+        "target": "x.com/f"
+      },
+      "issued_at": "2026-07-07T12:00:00.000Z",
+      "receipt_id": "rcpt_0010",
+      "verdict": {
+        "value": "verified"
+      }
+    },
+    {
+      "agent": {
+        "id": "agent-example-1"
+      },
+      "claim": {
+        "action": "x.post.publish",
+        "claimed_at": "2026-10-04T12:00:00.000Z",
+        "target": "x.com/g"
+      },
+      "issued_at": "2026-10-05T12:00:00.000Z",
+      "receipt_id": "rcpt_0011",
+      "verdict": {
+        "value": "verified"
+      }
+    }
+  ]
+}
