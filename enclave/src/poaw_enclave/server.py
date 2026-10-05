@@ -27,7 +27,7 @@ from . import VSOCK_PORT
 from .nsm import Nsm
 
 MAX_FRAME = 1 << 20
-DEFAULT_ACTIONS = "github.commit.push"
+DEFAULT_ACTIONS = "github.commit.push,github.pr.open,github.checks.pass"
 _CLAIM_STR = ("id", "workspace_id", "agent_ref", "action", "target", "client_claim_id", "claim_digest")
 
 

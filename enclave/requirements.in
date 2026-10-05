@@ -6,3 +6,6 @@ pydantic>=2.8
 httpx>=0.27
 certifi
 cbor2==5.9.0
+# Build backend for our three packages, pinned so the image is reproducible: the Dockerfile builds them with
+# --no-build-isolation, otherwise pip fetches the newest hatchling and its version lands in each dist-info/WHEEL.
+hatchling

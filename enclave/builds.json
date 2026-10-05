@@ -8,6 +8,24 @@
       "image_digest": "sha256:db091e5539e841569f8b2f85785d6b6d15d5a274455cb6e91c7cae9d4c7bf250",
       "eif_sha256": "0966fd130a57fd22b1bb3646ff6d15cb6e5fc1d96ca18056839646db2a596f81",
       "published_at": "2026-10-04T20:33:23Z"
+    },
+    {
+      "code_hash": "sha384:c191146547b2118c269643a2e2b69a047bb82364c2f7c01825fff8de17f38f288ea495f83d2b32f1bb6381138d8a307b",
+      "platform": "aws-nitro-enclave",
+      "version": "3",
+      "source": "https://github.com/Nuraveda/qed-proof-core/tree/v0.8.0/enclave",
+      "image_digest": "sha256:e5b66c0cf6a0d85d859d7b7ca433175a2112bfe67e44e0a320cfb1dc7bd280f3",
+      "eif_sha256": "778477aef7ef256c194face83cd3f47761bfe26471a67b9f17cbaee8b2449bad",
+      "published_at": "2026-10-05T03:27:51Z"
+    },
+    {
+      "code_hash": "sha384:b4f9fd1c5fd079b7d5ed5eebd330549b9e20d7b0a88316293c26940bc2a164b0b19338e14852cd7536eef2329b7b3d6a",
+      "platform": "aws-nitro-enclave",
+      "version": "4",
+      "source": "https://github.com/Nuraveda/qed-proof-core/tree/v0.8.0/enclave",
+      "image_digest": "sha256:9c71363b5ef28f7219cc1cb7388f084a19e0430eda035ea56613f7de06cc6dfe",
+      "eif_sha256": "433423c7ac7080c9a2fd1fb649349bbd1038ea355a4401d816a626f8144eaa59",
+      "published_at": "2026-10-05T03:57:31Z"
     }
   ]
 }

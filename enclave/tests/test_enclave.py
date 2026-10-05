@@ -197,7 +197,7 @@ async def test_disallowed_action_rejected():
 
 async def test_default_allowlist(monkeypatch):
     monkeypatch.delenv("QED_ENCLAVE_ACTIONS", raising=False)
-    assert server.allowed_actions() == frozenset({"github.commit.push"})
+    assert server.allowed_actions() == frozenset({"github.commit.push", "github.pr.open", "github.checks.pass"})
     monkeypatch.setenv("QED_ENCLAVE_ACTIONS", "a.b.c, github.pr.open")
     assert server.allowed_actions() == frozenset({"a.b.c", "github.pr.open"})
 
@@ -227,3 +227,44 @@ async def test_forwarder_relays_bytes():
     w.write(b"hello"); await w.drain()
     assert await asyncio.wait_for(r.read(100), 5) == b"HELLO"
     w.close(); fwd.close(); up.close()
+
+
+# -- the other GitHub actions (build 3) ------------------------------------------------------------------------------
+ALL_GITHUB = frozenset({"github.commit.push", "github.pr.open", "github.checks.pass"})
+
+
+def pr_handler(request: httpx.Request):
+    if request.url.path.endswith("/pulls/7"):
+        return httpx.Response(200, json={"state": "open", "base": {"ref": "main"}, "head": {"sha": SHA},
+                                         "created_at": "2026-10-04T11:59:30Z"})
+    return httpx.Response(404)
+
+
+def checks_handler(status):
+    def h(request: httpx.Request):
+        if request.url.path.endswith(f"/commits/{SHA}/check-runs"):
+            return httpx.Response(200, json={"check_runs": [{"name": "ci", "status": status, "conclusion":
+                                                             "success" if status == "completed" else None}]})
+        return httpx.Response(404)
+    return h
+
+
+async def test_pr_open_decided_and_attested():
+    resp, nsm = await run(make_request("github.pr.open", {"number": 7, "base": "main", "head_sha": SHA}),
+                          pr_handler, actions=ALL_GITHUB)
+    assert resp["outcome"] == "decided" and resp["verifier"] == {"id": "github.pr.open", "version": "1"}
+    assert resp["decision"]["verdict"] == "verified" and resp["decision"]["facts"]["number"] == 7
+    assert len(nsm.calls) == 1
+
+
+async def test_checks_pass_decided_and_attested():
+    resp, nsm = await run(make_request("github.checks.pass", {"sha": SHA}), checks_handler("completed"),
+                          actions=ALL_GITHUB)
+    assert resp["outcome"] == "decided" and resp["verifier"] == {"id": "github.checks.pass", "version": "1"}
+    assert resp["decision"]["verdict"] == "verified" and len(nsm.calls) == 1
+
+
+async def test_checks_still_running_is_retry_without_attestation():
+    resp, nsm = await run(make_request("github.checks.pass", {"sha": SHA}), checks_handler("in_progress"),
+                          actions=ALL_GITHUB)
+    assert resp["outcome"] == "retry" and resp["attestation"] is None and nsm.calls == []

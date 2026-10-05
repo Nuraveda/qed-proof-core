@@ -11,6 +11,28 @@ The client libraries have their own changelogs: [Python SDK](https://github.com/
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-05
+
+Trust level 3 now covers every GitHub check, and enclave builds are reproducible.
+
+### Added
+
+- Enclave build 4 (`sha384:b4f9fd1c…7b3d6a`) decides `github.pr.open` and `github.checks.pass` as well as
+  `github.commit.push`. All three call only `api.github.com`, so the host's proxy allowlist is unchanged.
+
+### Fixed
+
+- Enclave builds were not reproducible: two builds of the same source gave different PCR0, because build-time mtimes
+  of `/`, `/src` and `/tmp` reached the measurement. The image now resets them to `SOURCE_DATE_EPOCH`, pins the
+  hatchling build backend by hash and builds with `--no-build-isolation`. Rebuilding `enclave/` from this tag with the
+  README's steps gives build 4's PCR0 (verified on independent runners).
+- Builds 2 and 3 stay accepted so their receipts keep verifying, but they cannot be reproduced from source.
+
+### Notes
+
+- A claim the enclave hasn't decided within its 10-minute window falls back to level 1/2. For `github.checks.pass`
+  that means level 3 only when the checks finish inside the window.
+
 ## [0.7.0] - 2026-10-04
 
 Trust level 3: a verdict decided inside a hardware enclave, which anyone can check against AWS's own root of trust.
@@ -147,7 +169,8 @@ Initial release.
 - The reference checker (`check.py`, `anchor_check.py`) and a conformance vector suite with a generator.
 - A verification node with GitHub and HTTP verifiers, a verdict engine and a receipt builder.
 
-[Unreleased]: https://github.com/Nuraveda/qed-proof-core/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Nuraveda/qed-proof-core/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/Nuraveda/qed-proof-core/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Nuraveda/qed-proof-core/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/Nuraveda/qed-proof-core/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/Nuraveda/qed-proof-core/compare/v0.6.0...v0.6.1

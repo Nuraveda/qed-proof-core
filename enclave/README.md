@@ -14,7 +14,7 @@ decision to this exact build.
 - `nsm.py` talks to `/dev/nsm` with a ctypes `ioctl` and `cbor2` (pinned). Request CBOR
   `{"Attestation": {"user_data": <32 bytes>, "nonce": null, "public_key": null}}`; response
   `{"Attestation": {"document": <COSE_Sign1>}}` or `{"Error": ...}`. `FakeNsm` is for tests.
-- Only actions in `QED_ENCLAVE_ACTIONS` (baked into the image `ENV`, default `github.commit.push`) are served.
+- Only actions in `QED_ENCLAVE_ACTIONS` (baked into the image `ENV`, default `github.commit.push,github.pr.open,github.checks.pass` since build 3) are served.
 
 ## Protocol C4 (host to enclave)
 Frames are a 4-byte big-endian length followed by UTF-8 JSON (max 1 MiB). One request, one response.
@@ -40,13 +40,19 @@ AWS Nitro root, `pcrs[0] == code_hash` and `user_data == statement digest`, and 
 issuer's `verifier_builds`. Change one byte of the code or a dependency and PCR0 changes.
 
 ## Reproducing a build
-1. `docker build --platform linux/arm64 -f oss/enclave/Dockerfile oss/` (context is `oss/`; base image pinned by digest).
+1. From a checkout of `qed-proof-core` at the build's tag (the `source` in `builds.json`):
+   `docker build --platform linux/arm64 --no-cache -f enclave/Dockerfile .` (the context is the repository root;
+   base image pinned by digest).
 2. `nitro-cli build-enclave --docker-uri <image> --output-file qed.eif` prints PCR0/PCR1/PCR2.
 3. Compare PCR0 with the `code_hash` in `builds.json`.
 Dependencies: `requirements.txt` is generated with
 `uv pip compile requirements.in --generate-hashes --python-version 3.12 --python-platform aarch64-unknown-linux-gnu -o requirements.txt`.
-Reproducibility is a goal, not a guarantee: `SOURCE_DATE_EPOCH` and timestamp normalisation are set, but byte-identical
-EIFs depend on the Docker/nitro-cli versions, so each build publishes its image digest and EIF hash.
+Builds are reproducible from build 4 on: the base image and every dependency (including the hatchling build backend)
+are hash-pinned, our packages are built with `--no-build-isolation`, and every mtime the build touches is reset to
+`SOURCE_DATE_EPOCH`. The `enclave-build` workflow rebuilds from scratch and refuses to publish unless PCR0 matches.
+Builds 2 and 3 were not reproducible (build-time mtimes of `/`, `/src` and `/tmp` reached PCR0); they stay accepted
+so their receipts keep verifying. PCR0 still depends on the nitro-cli version (it supplies the kernel), so use the
+one in `amazonlinux:2023`, as the workflow does.
 
 ## `builds.json`
 `{"builds": [{"code_hash": "sha384:<pcr0 hex>", "platform": "aws-nitro-enclave", "version": "<string>",
