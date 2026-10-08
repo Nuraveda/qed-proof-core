@@ -46,7 +46,9 @@ def test_anchor_data_round_trips_and_schema_uid_is_stable():
     d = eth.anchor_data(b"\x01" * 32, 9, b"\x02" * 32, 5, b"\x03" * 32, "poaw/0.1")
     back = eth.decode_anchor_data(d)
     assert back["tree_size"] == 9 and back["root_hash"] == b"\x02" * 32 and back["spec_version"] == "poaw/0.1"
-    assert eth.schema_uid(eth.ANCHOR_SCHEMA) == eth.schema_uid(eth.ANCHOR_SCHEMA)
+    # Pinned literal, computed independently: keccak256(schema ++ zero resolver ++ revocable=false). Live checkers match it.
+    assert eth.schema_uid(eth.ANCHOR_SCHEMA).hex() == "8c2390b3ccbad40acc0b8bd80ddcaff120854e94b881fc226924c51cde0a28ec"
+    assert eth.schema_uid(eth.ANCHOR_SCHEMA) == keccak(eth.ANCHOR_SCHEMA.encode() + b"\x00" * 20 + b"\x00")
     assert len(eth.attest_calldata(eth.schema_uid(eth.ANCHOR_SCHEMA), d)) > 4
 
 

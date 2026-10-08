@@ -50,15 +50,32 @@ async def test_send_claim_is_single_flight_and_never_resets_landed():
     c, name = await _db()
     try:
         assert "anchors_one_pending" in INDEXES
-        assert await _claim(c, 8) == 8                 # fresh row → claimed
+        assert await _claim(c, 8) == 1                 # fresh row → claimed
         assert await _claim(c, 8) is None              # same size already pending → the second tick sends nothing
         assert await _claim(c, 12) is None             # a different size while one is pending → refused by the index
         await c.execute("update qed.anchors set status = 'landed' where tree_size = 8")
         assert await _claim(c, 8) is None              # #144: a landed row is never put back to pending
         assert await c.fetchval("select status from qed.anchors where tree_size = 8") == "landed"
-        assert await _claim(c, 12) == 12               # nothing pending now → the next size can be claimed
-        await c.execute("update qed.anchors set status = 'failed' where tree_size = 12")
-        assert await _claim(c, 12) == 12               # a failed row is retried
+        assert await _claim(c, 12) == 1                # nothing pending now → the next size can be claimed
+        await c.execute("update qed.anchors set status = 'failed', tx_hash = '0xold' where tree_size = 12")
+        assert await _claim(c, 12) == 2                # a failed row is retried (attempt 2)
         assert await c.fetchval("select attempts from qed.anchors where tree_size = 12") == 2
+        assert await c.fetchval("select tx_hash from qed.anchors where tree_size = 12") is None  # #240: no stale tx to poll
+    finally:
+        await _drop(c, name)
+
+
+async def test_pinned_update_changes_only_the_attempt_it_polled():
+    """#240: a retry bumps `attempts`, so a stale poller's UPDATE matches nothing, even when both attempts have a null tx_hash."""
+    from poaw_node.anchoring.anchor import _PINNED
+    c, name = await _db()
+    try:
+        assert await _claim(c, 8) == 1
+        await c.execute("update qed.anchors set status = 'failed' where tree_size = 8")   # attempt 1 failed with no tx
+        assert await _claim(c, 8) == 2                                   # attempt 2: also no tx
+        stale = f"update qed.anchors set status = 'failed', last_error = 'x' {_PINNED}"
+        assert await c.execute(stale, 8, 1) == "UPDATE 0"                # the old attempt's poller changes nothing
+        assert await c.fetchval("select status from qed.anchors where tree_size = 8") == "pending"
+        assert await c.execute(stale, 8, 2) == "UPDATE 1"                # the current attempt can still be failed
     finally:
         await _drop(c, name)

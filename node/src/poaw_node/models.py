@@ -10,7 +10,7 @@ import json
 
 from pydantic import BaseModel, Field, field_validator
 
-MAX_PARAMS_BYTES = 4096  # SECURITY F3: params end up in permanent, public receipts
+MAX_PARAMS_BYTES = 2048  # SECURITY F3: params end up in permanent, public receipts. The whole receipt is bounded separately (receipt.MAX_SIGNED_BYTES)
 
 
 class Verdict(str, Enum):

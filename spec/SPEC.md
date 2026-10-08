@@ -298,12 +298,16 @@ issuer's published schema) to a `(log_id, tree_size, root_hash, …)` that equal
 `anchor.tree_size` and a root the checker can connect to `proof.root_hash`:
 
 - If `anchor.tree_size == proof.tree_size`, the roots MUST be equal.
-- Otherwise the checker MUST obtain an RFC 6962 **consistency proof** between the two sizes (`PROOF(m, D[n])` with `m` the
+- Whenever `anchor.tree_size != proof.tree_size`, the checker MUST obtain an RFC 6962 **consistency proof** between the two sizes (`PROOF(m, D[n])` with `m` the
   smaller size) and MUST verify it (RFC 9162 §2.1.4.2). The smaller tree's root is the old root and the larger tree's root is
   the new root; one of them is the attested root and the other is `proof.root_hash`, whichever way round the sizes fall. The
   checker takes both roots from the attestation and from the receipt, never from the consistency proof's own response. The
   proof comes from the issuer's `GET /v1/log/consistency` (§8.6), or is supplied alongside the receipt. If the checker cannot
   obtain one, the anchor is unproven (`consistency_proof_required`), never a pass.
+- In addition, if `anchor.tree_size < proof.tree_size`, the anchor covers only the first `anchor.tree_size` leaves: the
+  checker MUST require `proof.leaf_index < anchor.tree_size`, and otherwise report the anchor as not covering the receipt
+  (`anchor_does_not_cover_leaf`), never a pass. The consistency proof shows the receipt's tree extends the anchored tree;
+  only with this bound does the receipt's inclusion put it inside the anchored tree. Both checks are required.
 
 The attestation's block timestamp is the receipt's **proven-by time**.
 

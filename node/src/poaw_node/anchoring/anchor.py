@@ -24,13 +24,23 @@ from . import eth
 
 
 # Claims the send for one tree size: a fresh row, or a retry of a FAILED one. A landed or pending row is never reset
-# (#144), and the `anchors_one_pending` unique index refuses a second pending row of any size (#147).
+# (#144), and the `anchors_one_pending` unique index refuses a second pending row of any size (#147). A retry clears the
+# old attempt's tx_hash (#240), so nothing polls the previous transaction on behalf of the new one.
 CLAIM_ANCHOR_SQL = """insert into qed.anchors (tree_size, root_hash, prev_tree_size, chain, status, attempts)
    values ($1, $2, $3, $4, 'pending', 1)
    on conflict (tree_size) do update set status = 'pending', attempts = qed.anchors.attempts + 1,
-                                         last_error = null, created_at = now()
+                                         last_error = null, tx_hash = null, created_at = now()
    where qed.anchors.status not in ('landed', 'pending')
-   returning tree_size"""
+   returning attempts"""
+
+
+# A state change is pinned to the attempt that made it (#240): still pending, same `attempts` number. Every reclaim bumps
+# `attempts`, so a stale poller matches no row, even when both attempts have a null tx_hash.
+_PINNED = "where tree_size = $1 and status = 'pending' and attempts = $2"
+
+
+def _changed(result) -> bool:
+    return result != "UPDATE 0"  # asyncpg returns the command tag
 
 
 def log(event: str, **kw) -> None:
@@ -127,27 +137,29 @@ class Anchorer:
             # lock doesn't survive the transaction pooler, so the database decides: a landed or pending row is never reset,
             # and the `anchors_one_pending` unique index allows ONE pending row in total. A tick that loses gets no row back
             # and sends nothing, so two transactions can never race for the same nonce.
+            attempt = None
             try:
-                claimed = await conn.fetchval(CLAIM_ANCHOR_SQL, size, root, prev_size or None, self.cfg.chain)
+                attempt = await conn.fetchval(CLAIM_ANCHOR_SQL, size, root, prev_size or None, self.cfg.chain)
             except asyncpg.UniqueViolationError:
-                claimed = None
-            if claimed is None:
+                pass  # another tick holds the one pending row: attempt stays None, so this tick is busy
+            if attempt is None:
                 log("anchor.in_flight_elsewhere", tree_size=size)
                 return {"anchor": "busy"}
             try:
                 tx = await asyncio.to_thread(self.rpc.send, self.signer, self.cfg.chain_id, eth.EAS, calldata)
             except Exception as exc:
-                await conn.execute("update qed.anchors set status = 'failed', last_error = $2 where tree_size = $1",
-                                   size, f"send: {exc}"[:500])
+                await conn.execute(f"update qed.anchors set status = 'failed', last_error = $3 {_PINNED}",
+                                   size, attempt, f"send: {exc}"[:500])
                 log("anchor.send_failed", tree_size=size, error=str(exc)[:200])
                 await self.ops_alert(f"❌ Anchor send failed for tree {size}: {str(exc)[:200]}")
                 return {"anchor": "send-failed"}
-            await conn.execute("update qed.anchors set tx_hash = $2 where tree_size = $1", size, tx)
+            mine = {"tree_size": size, "attempts": attempt, "tx_hash": tx}  # our own attempt; never re-read, it may have moved on
+            if not _changed(await conn.execute(f"update qed.anchors set tx_hash = $3 {_PINNED}", size, attempt, tx)):
+                return await self._stale(mine)
             log("anchor.sent", tree_size=size, prev_tree_size=prev_size, tx=tx, chain=self.cfg.chain)
             rc = await asyncio.to_thread(self.rpc.wait, tx, 20)
             if rc:
-                row = await conn.fetchrow("select * from qed.anchors where tree_size = $1", size)
-                return await self._land(conn, row, rc)
+                return await self._land(conn, mine, rc)
             return {"anchor": "sent", "tree_size": size, "tx": tx}
 
     async def _poll(self, conn, row, now) -> dict:
@@ -155,8 +167,10 @@ class Anchorer:
         if rc:
             return await self._land(conn, row, rc)
         if now - row["created_at"] > self.cfg.pending_timeout:
-            await conn.execute("update qed.anchors set status = 'failed', last_error = 'not mined before timeout' where tree_size = $1",
-                               row["tree_size"])
+            res = await conn.execute(f"update qed.anchors set status = 'failed', last_error = 'not mined before timeout' {_PINNED}",
+                                     row["tree_size"], row["attempts"])
+            if not _changed(res):
+                return await self._stale(row)
             await self.ops_alert(f"❌ Anchor for tree {row['tree_size']} not mined within "
                                  f"{self.cfg.pending_timeout}; it will be retried. tx {row['tx_hash']}")
             return {"anchor": "timed-out", "tree_size": row["tree_size"]}
@@ -164,7 +178,10 @@ class Anchorer:
 
     async def _land(self, conn, row, rc) -> dict:
         if int(rc["status"], 16) != 1:
-            await conn.execute("update qed.anchors set status = 'failed', last_error = 'reverted' where tree_size = $1", row["tree_size"])
+            res = await conn.execute(f"update qed.anchors set status = 'failed', last_error = 'reverted' {_PINNED}",
+                                     row["tree_size"], row["attempts"])
+            if not _changed(res):
+                return await self._stale(row)
             await self.ops_alert(f"❌ Anchor tx REVERTED for tree {row['tree_size']}: {row['tx_hash']}")
             return {"anchor": "reverted"}
         uid = eth.uid_from_receipt(rc)
@@ -174,14 +191,21 @@ class Anchorer:
             # pending with its tx hash, and the next tick's poll lands it. This is not an error, so no alert.
             log("anchor.land_deferred", tree_size=row["tree_size"], block_seen=block is not None, uid_seen=uid is not None)
             return {"anchor": "pending", "tree_size": row["tree_size"]}
-        await conn.execute(
-            """update qed.anchors set status = 'landed', eas_uid = $2, block_number = $3, block_time = to_timestamp($4),
-                      gas_used = $5, effective_gas_price_wei = $6, anchored_at = now() where tree_size = $1""",
-            row["tree_size"], uid, int(rc["blockNumber"], 16), int(block["timestamp"], 16),
+        res = await conn.execute(
+            """update qed.anchors set status = 'landed', eas_uid = $3, block_number = $4, block_time = to_timestamp($5),
+                      gas_used = $6, effective_gas_price_wei = $7, anchored_at = now()
+               where tree_size = $1 and status = 'pending' and attempts = $2""",
+            row["tree_size"], row["attempts"], uid, int(rc["blockNumber"], 16), int(block["timestamp"], 16),
             int(rc["gasUsed"], 16), int(rc.get("effectiveGasPrice", "0x0"), 16))
+        if not _changed(res):
+            return await self._stale(row)
         log("anchor.landed", tree_size=row["tree_size"], uid=uid, block=int(rc["blockNumber"], 16),
             gas_used=int(rc["gasUsed"], 16))
         return {"anchor": "landed", "tree_size": row["tree_size"], "uid": uid}
+
+    async def _stale(self, row) -> dict:
+        log("anchor.stale_attempt", tree_size=row["tree_size"], tx=row["tx_hash"])
+        return {"anchor": "stale", "tree_size": row["tree_size"]}
 
     async def _refuse(self, why: str) -> dict:
         log("anchor.P0_refused", reason=why)

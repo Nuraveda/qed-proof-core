@@ -3,11 +3,16 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta, timezone
+from urllib.parse import quote
 
 import httpx
+import poaw_core
 
 from ..models import Claim, Observed, Reason, Retry, Unverifiable, Verdict
 from . import Params, VerifierSpec, register
+
+
+MAX_FAILING_NAMES, MAX_FAILING_NAME, MAX_FAILING_BYTES = 10, 64, 700  # names, bytes per name (UTF-8), bytes of the whole JSON list
 
 
 class PushParams(Params):
@@ -27,6 +32,16 @@ class ChecksParams(Params):
 API = "https://api.github.com"
 _REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _SHA = re.compile(r"^[0-9a-f]{40}$")
+_BAD_BRANCH_CHARS = re.compile(r"[\x00-\x20\x7f~^:?*\[\\#%]")
+CHECK_PAGES_MAX = 10  # 1000 runs; a commit with more than this can't be fully enumerated, so it is never VERIFIED
+CHECK_RUNS_CEILING = 1000  # the endpoint only covers the newest 1000 check suites (and 1000 runs here): at or above this, we cannot see everything
+
+
+def _valid_branch(b: str) -> bool:
+    """git check-ref-format --branch rules, plus `#`, `%` and `?` (they'd change which URL we actually request)."""
+    return not (not b or b == "@" or b.startswith(("-", "/")) or b.endswith(("/", ".")) or ".." in b or "//" in b
+                or "@{" in b or _BAD_BRANCH_CHARS.search(b)
+                or any(p.startswith(".") or p.endswith(".lock") for p in b.split("/")))
 
 
 def _headers(creds) -> dict[str, str]:
@@ -63,8 +78,8 @@ def _now() -> datetime:
 async def commit_push(claim: Claim, creds, client: httpx.AsyncClient):
     """Verified iff `branch` contains `sha` on the remote. Absent SHA → failed (retried until the deadline)."""
     sha, branch = claim.params.get("sha"), claim.params.get("branch")
-    if not _REPO.match(claim.target) or not isinstance(sha, str) or not _SHA.match(sha) or not isinstance(branch, str) or not branch:
-        return Unverifiable(Reason.CLAIM_AMBIGUOUS, "need target owner/repo, params.sha (40 hex), params.branch")
+    if not _REPO.match(claim.target) or not isinstance(sha, str) or not _SHA.match(sha) or not isinstance(branch, str) or not _valid_branch(branch):
+        return Unverifiable(Reason.CLAIM_AMBIGUOUS, "need target owner/repo, params.sha (40 hex), params.branch (a valid branch name)")
 
     r = await _get(client, f"{API}/repos/{claim.target}/commits/{sha}", creds)
     if isinstance(r, Retry):
@@ -86,7 +101,7 @@ async def commit_push(claim: Claim, creds, client: httpx.AsyncClient):
         return Retry(_transport_reason(r), f"commit HTTP {r.status_code}")
     committed_at = _parse_time(r.json().get("commit", {}).get("committer", {}).get("date"))
 
-    c = await _get(client, f"{API}/repos/{claim.target}/compare/{sha}...{branch}", creds)
+    c = await _get(client, f"{API}/repos/{claim.target}/compare/{sha}...{quote(branch, safe='/')}", creds)
     if isinstance(c, Retry):
         return c
     if c.status_code == 404:
@@ -110,6 +125,13 @@ async def pr_open(claim: Claim, creds, client: httpx.AsyncClient):
     if isinstance(r, Retry):
         return r
     if r.status_code == 404:
+        # Same as commit_push: 404 is also what a private repo without access returns.
+        repo = await _get(client, f"{API}/repos/{claim.target}", creds)
+        if isinstance(repo, Retry):
+            return repo
+        if repo.status_code != 200:
+            return Unverifiable(Reason.NO_CONNECTION if not (creds and creds.token()) else Reason.PERMISSION_DENIED,
+                                "repository not readable")
         return Observed({"number": number, "pr_found": False}, Verdict.FAILED, Reason.NOT_FOUND, observed_at=_now(), final=False)
     if r.status_code != 200:
         return Retry(_transport_reason(r), f"pull HTTP {r.status_code}")
@@ -127,19 +149,44 @@ async def checks_pass(claim: Claim, creds, client: httpx.AsyncClient):
     sha = claim.params.get("sha")
     if not _REPO.match(claim.target) or not isinstance(sha, str) or not _SHA.match(sha):
         return Unverifiable(Reason.CLAIM_AMBIGUOUS, "need target owner/repo and params.sha (40 hex)")
-    r = await _get(client, f"{API}/repos/{claim.target}/commits/{sha}/check-runs?per_page=100", creds)
-    if isinstance(r, Retry):
-        return r
-    if r.status_code != 200:
-        return Retry(_transport_reason(r), f"check-runs HTTP {r.status_code}")
-    runs = r.json().get("check_runs", [])
+    # The runs endpoint only covers the newest 1000 check SUITES, but its total_count counts runs. Check the suite count first.
+    su = await _get(client, f"{API}/repos/{claim.target}/commits/{sha}/check-suites?per_page=1", creds)
+    if isinstance(su, Retry):
+        return su
+    if su.status_code != 200:
+        return Retry(_transport_reason(su), f"check-suites HTTP {su.status_code}")
+    suites = su.json().get("total_count")
+    if not isinstance(suites, int) or isinstance(suites, bool) or suites >= CHECK_RUNS_CEILING:
+        return Unverifiable(Reason.DESTINATION_UNAVAILABLE, f"{suites} check suites exceeds what can be enumerated")
+    runs: list = []
+    for page in range(1, CHECK_PAGES_MAX + 1):
+        r = await _get(client, f"{API}/repos/{claim.target}/commits/{sha}/check-runs?filter=latest&per_page=100&page={page}", creds)
+        if isinstance(r, Retry):
+            return r
+        if r.status_code != 200:
+            return Retry(_transport_reason(r), f"check-runs HTTP {r.status_code}")
+        body = r.json()
+        batch = body.get("check_runs", [])
+        total = body.get("total_count", len(batch))
+        if total >= CHECK_RUNS_CEILING:
+            return Unverifiable(Reason.DESTINATION_UNAVAILABLE, f"{total} check runs exceeds what the endpoint can enumerate")
+        runs += batch
+        if len(runs) >= total or not batch:
+            break
+    if len(runs) < total:
+        return Unverifiable(Reason.DESTINATION_UNAVAILABLE, f"could not enumerate all {total} check runs")
     if not runs:
         return Observed({"sha": sha, "check_runs": 0}, Verdict.FAILED, Reason.NOT_FOUND, observed_at=_now(), final=False)
     if any(run.get("status") != "completed" for run in runs):
         return Retry(Reason.DESTINATION_UNAVAILABLE, "checks still running")
     ok = {"success", "neutral", "skipped"}
     failing = sorted(run.get("name", "?") for run in runs if run.get("conclusion") not in ok)
-    facts = {"sha": sha, "check_runs": len(runs), "failing": failing}
+    # Destination-derived, so bounded here by ENCODED size (receipts must fit the signer's 4096 bytes): the first names, each
+    # cut to MAX_FAILING_NAME UTF-8 bytes, trailing names dropped to fit MAX_FAILING_BYTES of canonical JSON, and the full count.
+    names = [str(n).encode()[:MAX_FAILING_NAME].decode(errors="ignore") for n in failing[:MAX_FAILING_NAMES]]
+    while names and len(poaw_core.jcs(names)) > MAX_FAILING_BYTES:  # canonical JSON bytes, escapes included
+        names.pop()
+    facts = {"sha": sha, "check_runs": len(runs), "failing": names, "failing_total": len(failing)}
     if failing:
         return Observed(facts, Verdict.MISMATCH, Reason.CONTENT_MISMATCH, observed_at=_now())
     return Observed(facts, Verdict.VERIFIED, observed_at=_now())

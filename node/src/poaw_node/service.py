@@ -4,7 +4,8 @@ from __future__ import annotations
 import hashlib
 import hmac
 import inspect
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -51,6 +52,8 @@ class Node:
 
     async def submit(self, workspace_id: str, c: ClaimIn) -> tuple[Claim, bool]:
         self.validate_params(c)
+        if (size := rc.max_signed_size(c, self.issuer_name)) > rc.MAX_SIGNED_BYTES:  # #235: KMS RAW refuses larger messages
+            raise ValueError(f"claim too large: its receipt could reach {size} signed bytes, the limit is {rc.MAX_SIGNED_BYTES}")
         spec = REGISTRY.get(c.action)
         deadline = c.claimed_at + (spec.deadline if spec else UNSUPPORTED_DEADLINE)
         digest_obj = {"action": c.action, "target": c.target, "params": c.params, "claimed_at": rc.ts(c.claimed_at),
@@ -89,6 +92,7 @@ class Node:
             await self.store.reschedule(claim.id, min(now + backoff, claim.deadline_at), _describe(result))
             return None
 
+        decision = replace(decision, facts=rc.limit_facts(decision.facts))  # after the verdict: size only, never the outcome
         body = rc.build_body(claim=claim, decision=decision, verifier_id=verifier_id, verifier_version=version,
                              attempts=attempts, issuer_key_id=self.key_id, issuer_name=self.issuer_name, issued_at=now)
         signed = rc.sign(body, self.signer)
@@ -151,15 +155,28 @@ class Node:
     async def tick(self, *, limit: int = 25, budget_s: float = 45.0) -> dict:
         """One scheduled pass: lease due claims, check each, then flush alerts. Stops taking work at the budget."""
         import time
-        start, done, rescheduled = time.monotonic(), 0, 0
+        start, done, rescheduled, errors = time.monotonic(), 0, 0, 0
         skip = {"skip_enclave": (sorted(self.enclave_actions), self.enclave_window)} if self.enclave_actions else {}
         for claim in await self.store.lease_due(limit, timedelta(minutes=2), **skip):
             if time.monotonic() - start > budget_s:
                 break
-            rid = await self.check(claim, attempts=claim.attempts)
+            try:
+                rid = await self.check(claim, attempts=claim.attempts)
+            except Exception as exc:  # #235: one claim that cannot be signed or stored must not stop the rest, or the alerts
+                errors += 1
+                print(json.dumps({"event": "tick.claim_error", "claim_id": claim.id, "error": type(exc).__name__,
+                                  "detail": str(exc)[:300]}), flush=True)
+                try:  # the store's own backoff, so the claim is not re-leased every two minutes; no receipt is written
+                    backoff = min(timedelta(seconds=30 * (2 ** min(claim.attempts, 5))), timedelta(minutes=10))
+                    await self.store.reschedule(claim.id, datetime.now(timezone.utc) + backoff,  # not capped at the deadline: a
+                                                # past deadline would put it in the past and re-take it every tick
+                                                f"tick_error:{type(exc).__name__}")
+                except Exception:
+                    pass
+                continue
             done, rescheduled = done + (rid is not None), rescheduled + (rid is None)
         sent = await self.flush_alerts()
-        return {"decided": done, "rescheduled": rescheduled, "alerts_sent": sent}
+        return {"decided": done, "rescheduled": rescheduled, "errors": errors, "alerts_sent": sent}
 
     async def flush_alerts(self) -> int:
         sent = 0

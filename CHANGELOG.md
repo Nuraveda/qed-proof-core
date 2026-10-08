@@ -11,6 +11,41 @@ The client libraries have their own changelogs: [Python SDK](https://github.com/
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-08
+
+Fixes from a full audit. Several close paths to a wrong verdict or a false proven-by time; one input limit is lower.
+
+### Changed
+
+- **`claim.params` is capped at 2,048 bytes** (was 4,096). Intake also refuses a claim whose worst-case receipt can't fit
+  the signer's 4,096-byte message limit, so every accepted claim can be signed.
+- Receipt `facts` are bounded after the verdict is decided: strings up to 512 UTF-8 bytes, lists up to 20 items, the
+  whole object up to 1,024 canonical bytes (else `{"facts_truncated": true}`). Truncation never changes a verdict.
+- `github.checks.pass` records at most 10 failing check names (each up to 64 bytes) plus `failing_total`.
+
+### Fixed
+
+- **SPEC §8.4, reference checker:** an anchor of a **smaller** tree than the receipt's proof no longer counts as anchoring
+  a receipt appended after it. The check requires `proof.leaf_index < anchor.tree_size`, otherwise
+  `anchor_does_not_cover_leaf`; a consistency proof is still required whenever the sizes differ. Before, such a receipt
+  could get a proven-by time from before it existed. Receipts from an honest issuer are unaffected.
+- `github.commit.push`: the branch is validated against git's ref-name rules and percent-encoded, so a name like
+  `main#x` can no longer be checked as `main`.
+- `http.url.status`: asks for an uncompressed body, refuses a compressed one unread, and reads at most 1 MB of raw bytes;
+  a larger body is `unverifiable`. Before, it fingerprinted only the first million characters.
+- `github.checks.pass`: counts check suites first (1,000 or more is `unverifiable`), then pages through every run with
+  `filter=latest`; an incomplete listing is `unverifiable`. Before, it read one page of 100 runs.
+- `github.pr.open`: a 404 from a repository the token can't read is `unverifiable`, not `failed`.
+- The tick isolates each claim: one claim that fails to sign or store backs off and no longer stops the others.
+- Anchoring: a retried anchor clears its old transaction, and every status update is pinned to its attempt, so an
+  overlapping tick can't fail or land the wrong attempt; losing the one-pending race returns `busy`.
+- The core CI's spec tests install `jsonschema` explicitly.
+
+### Notes
+
+- The enclave guest (`enclave/`) imports these verifiers, so a new enclave build is needed for level-3 decisions to use
+  them; build 4 keeps its measured code.
+
 ## [0.8.0] - 2026-10-05
 
 Trust level 3 now covers every GitHub check, and enclave builds are reproducible.
@@ -169,7 +204,8 @@ Initial release.
 - The reference checker (`check.py`, `anchor_check.py`) and a conformance vector suite with a generator.
 - A verification node with GitHub and HTTP verifiers, a verdict engine and a receipt builder.
 
-[Unreleased]: https://github.com/Nuraveda/qed-proof-core/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/Nuraveda/qed-proof-core/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/Nuraveda/qed-proof-core/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Nuraveda/qed-proof-core/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Nuraveda/qed-proof-core/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/Nuraveda/qed-proof-core/compare/v0.6.1...v0.6.2

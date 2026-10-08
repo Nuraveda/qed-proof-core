@@ -57,9 +57,9 @@ def cdoc(m, n):
             "proof": [p.b64u(h) for h in p.consistency_proof(m, n, LEAVES)]}
 
 
-def proof_at(size, anchor_size=None):
-    pr = {"log_id": LOG_ID, "leaf_index": 2, "tree_size": size, "root_hash": p.b64u(root(size)),
-          "inclusion": [p.b64u(h) for h in p.inclusion_path(2, LEAVES[:size])]}
+def proof_at(size, anchor_size=None, leaf=2):
+    pr = {"log_id": LOG_ID, "leaf_index": leaf, "tree_size": size, "root_hash": p.b64u(root(size)),
+          "inclusion": [p.b64u(h) for h in p.inclusion_path(leaf, LEAVES[:size])]}
     if anchor_size:
         pr["anchor"] = {"chain": "eip155:84532", "scheme": "eas", "uid": "0x" + "77" * 32, "tx_hash": "0x" + "11" * 32, "tree_size": anchor_size}
     return pr
@@ -164,3 +164,16 @@ def test_anchor_consistency_failures(monkeypatch):
     wrong_receipt = copy.deepcopy(proof_at(6, 9))
     wrong_receipt["root_hash"] = p.b64u(p.sha256(b"x"))
     assert anchor(monkeypatch, wrong_receipt, chain(9), cdoc(6, 9))["reason"] == "consistency_proof_invalid"
+
+
+@pytest.mark.parametrize("leaf", [6, 8])
+def test_anchor_of_a_smaller_tree_does_not_cover_a_later_leaf(monkeypatch, leaf):
+    # Audit #232: an anchor of the first 6 leaves says nothing about leaf 6 or later, even with a valid 6->9 consistency
+    # proof; accepting it would give the receipt a proven-by time from before it existed.
+    r = anchor(monkeypatch, proof_at(9, 6, leaf=leaf), chain(6), cdoc(6, 9))
+    assert r == {"ok": False, "reason": "anchor_does_not_cover_leaf", "proven_by": None}
+
+
+def test_anchor_of_a_smaller_tree_covers_an_earlier_leaf(monkeypatch):
+    r = anchor(monkeypatch, proof_at(9, 6, leaf=5), chain(6), cdoc(6, 9))
+    assert r == {"ok": True, "reason": "anchored", "proven_by": 1790000000}

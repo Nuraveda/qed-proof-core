@@ -19,7 +19,7 @@ jobs:
         working-directory: spec
         run: uv run tools/generate_vectors.py --check
       - name: Spec tests
-        run: uv run --no-project --with pytest --with "eth-abi>=5" --with "eth-hash[pycryptodome]>=0.7" --with cryptography --with rfc8785==0.1.4 pytest -q spec/tests
+        run: uv run --no-project --with pytest --with "eth-abi>=5" --with "eth-hash[pycryptodome]>=0.7" --with cryptography --with rfc8785==0.1.4 --with "jsonschema>=4.23" pytest -q spec/tests
       - name: poaw-core tests
         working-directory: core-python
         run: uv run --with pytest pytest -q tests

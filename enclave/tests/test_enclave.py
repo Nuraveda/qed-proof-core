@@ -242,8 +242,11 @@ def pr_handler(request: httpx.Request):
 
 def checks_handler(status):
     def h(request: httpx.Request):
+        # The verifier counts check suites first (audit #238), then pages through the runs.
+        if request.url.path.endswith(f"/commits/{SHA}/check-suites"):
+            return httpx.Response(200, json={"total_count": 1, "check_suites": []})
         if request.url.path.endswith(f"/commits/{SHA}/check-runs"):
-            return httpx.Response(200, json={"check_runs": [{"name": "ci", "status": status, "conclusion":
+            return httpx.Response(200, json={"total_count": 1, "check_runs": [{"name": "ci", "status": status, "conclusion":
                                                              "success" if status == "completed" else None}]})
         return httpx.Response(404)
     return h

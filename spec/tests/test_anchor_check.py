@@ -26,7 +26,7 @@ def chain(*, chain_id=84532, uid=UID, schema=SCHEMA, attester=ATTESTER, revoked=
     return rpc
 
 
-PROOF = {"log_id": p.b64u(LOG), "tree_size": 9, "root_hash": p.b64u(ROOT),
+PROOF = {"log_id": p.b64u(LOG), "leaf_index": 0, "tree_size": 9, "root_hash": p.b64u(ROOT),
          "anchor": {"chain": "eip155:84532", "scheme": "eas", "uid": "0x" + UID.hex(), "tx_hash": "0x" + "11" * 32, "tree_size": 9}}
 KEYS = {"anchor_addresses": [ATTESTER], "anchor_schemas": ["0x" + SCHEMA.hex()]}
 

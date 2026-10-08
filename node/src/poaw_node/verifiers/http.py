@@ -64,9 +64,20 @@ async def url_status(claim: Claim, creds, client: httpx.AsyncClient):
     try:
         # Connect to the validated IP. Host + SNI stay the original name, so TLS still verifies the certificate
         # against the name. Redirects aren't followed: one could lead to a non-public host.
-        resp = await client.get(pinned_url(parts, ip), timeout=10, follow_redirects=False,
-                                headers={"User-Agent": "poaw-node-http-verifier", "Host": parts.netloc},
-                                extensions={"sni_hostname": parts.hostname})
+        async with client.stream("GET", pinned_url(parts, ip), timeout=10, follow_redirects=False,
+                                 headers={"User-Agent": "poaw-node-http-verifier", "Host": parts.netloc,
+                                          "Accept-Encoding": "identity"},
+                                 extensions={"sni_hostname": parts.hostname}) as resp:
+            body = b""
+            if want_fp is not None and resp.status_code == want:  # only fingerprint what we'd compare; hard byte cap
+                # Raw wire bytes only: a decoded chunk can be arbitrarily larger than what was sent (compression bomb).
+                if resp.headers.get("content-encoding", "identity").strip().lower() not in ("", "identity"):
+                    return Unverifiable(Reason.DESTINATION_UNAVAILABLE, "compressed body refused despite Accept-Encoding: identity")
+                async for chunk in resp.aiter_raw(chunk_size=65536):
+                    body += chunk
+                    if len(body) > MAX_BODY:
+                        return Unverifiable(Reason.DESTINATION_UNAVAILABLE, f"body larger than {MAX_BODY} bytes cannot be fingerprinted")
+            encoding = resp.encoding
     except httpx.HTTPError as exc:
         return Retry(Reason.DESTINATION_UNAVAILABLE, type(exc).__name__)
     facts = {"url": claim.target, "status": resp.status_code}
@@ -79,7 +90,7 @@ async def url_status(claim: Claim, creds, client: httpx.AsyncClient):
                         Reason.NOT_FOUND if resp.status_code == 404 else Reason.CONTENT_MISMATCH, observed_at=now,
                         final=resp.status_code != 404)
     if want_fp is not None:
-        got = fingerprint(resp.text[:MAX_BODY])
+        got = fingerprint(body.decode(encoding or "utf-8", errors="replace"))
         facts["content_fingerprint"] = got
         if got != want_fp:
             return Observed(facts, Verdict.MISMATCH, Reason.CONTENT_MISMATCH, observed_at=now)
